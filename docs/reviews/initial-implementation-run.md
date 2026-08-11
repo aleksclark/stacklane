@@ -1,7 +1,7 @@
 # Initial MVP Implementation Run Report
 
 - **Branch:** `feat/initial-mvp`
-- **Final HEAD:** `2400f3348df196a7eb495e321198ed43586ccf7e`
+- **Feature content HEAD (code):** `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9`
 - **Base master:** `5c68ab515bf63b2d568fa010dd188c7174f7139c`
 - **Date:** 2026-08-11
 - **Module:** `github.com/aleksclark/stacklane`
@@ -10,9 +10,16 @@
 
 Functional MVP delivered: `stacklane serve` / `status` / `resolve` with Docker event+periodic reconcile, durable VIP leases, authoritative `stacklane.test` DNS, and TCP proxy VIP→loopback-only backends.
 
+Security/integration review Important findings remediated with TDD (see below).
+
 ## Commit list (from base master)
 
 ```
+b6ded0e fix: require loopback vip and dns listen defaults
+dc19fbe fix: skip reconcile save when state load fails
+4fe3e97 fix: persist vip leases before advertising dns and proxy
+fb4ff56 docs: fix run report whitespace and tip SHA
+0a3124f docs: add initial implementation run report with gate evidence
 c144dd3 docs: add readme examples and real docker e2e
 f00fa61 chore: add makefile and pinned github actions ci
 5eb7c07 feat: add serve status and resolve commands
@@ -49,9 +56,25 @@ testdata/state/
 
 No repository-root `*.go` files.
 
+## Security review remediation (Important)
+
+Code HEAD for remediations: `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9`.
+
+| Finding | Fix | Regression tests |
+|---|---|---|
+| Persist VIP leases before DNS/proxy advertise | `apply`: Save → SetRecords → Reconcile; Save fail skips advertise | `TestApply_PersistsLeasesBeforeDNSAndProxy`, `TestApply_SaveFailureDoesNotAdvertise` |
+| Runtime Store.Load failure must not wipe leases | `reconcileOnce`: Load err → skip apply/save (no empty snap Save) | `TestReconcile_LoadErrorDoesNotSaveEmptyOrClobber` |
+| Proxy bind VIP must be loopback (+ pool) | `validateEndpoint`: `VIP.IsLoopback()`; optional `VIPPool` / `IsAllowedVIP`; serve wires pool | `TestProxy_RejectNonLoopbackVIP`, `TestProxy_RejectVIPOutsidePool`, `TestProxy_RejectWithIsAllowedVIPCallback` |
+| DNS listen loopback fail-closed | Validate host is loopback unless `--dns-allow-non-loopback` | `TestValidate_RejectsNonLoopbackDNSListen`, `TestLoad_DNSAllowNonLoopbackFlag`, `TestValidate_AllowsNonLoopbackDNSListenWithExplicitFlag` |
+
+Minors also landed in the same remediation pass:
+
+- State temp write uses `O_NOFOLLOW` (Linux)
+- `vip_auto_alias=true` fails validation as not implemented (no silent no-op)
+
 ## Gate evidence (real)
 
-### `make ci` — PASS
+### `make ci` — PASS (post-remediation)
 
 ```
 go vet ./...
@@ -74,6 +97,10 @@ Covered in `internal/reconcile` and `internal/app` unit/integration tests under 
 - FQDN conflict → lexicographically smaller container ID wins
 - status JSON + resolve exit codes
 - Second serve daemon lock fails
+- Lease Save before DNS/proxy advertise; Save fail does not advertise
+- Mid-run state Load failure does not Save empty / clobber leases
+- Non-loopback VIP rejected; out-of-pool VIP rejected
+- Non-loopback DNS listen rejected without allow flag
 
 ### Real Docker E2E — PASS
 
@@ -82,22 +109,25 @@ Docker available (`docker info` OK).
 ```
 $ make e2e
 E2E=1 go test -race -tags=e2e ./internal/app -count=1
-ok  	github.com/aleksclark/stacklane/internal/app	2.962s
+ok  	github.com/aleksclark/stacklane/internal/app	3.031s
 ```
 
 Scenario: two compose projects (`testdata/compose/stack-a`, `stack-b`) with `hashicorp/http-echo`, labels `alpha`/`beta` + `curri` + `app:8080`, publish `127.0.0.1::8080`. Asserted distinct VIPs, DNS A records, and HTTP bodies A≠B via VIP:8080.
 
+### `git diff --check master...HEAD` — PASS
+
 ## Residual gaps / notes
 
 - Host resolver installer intentionally **NOT implemented** (documented in README).
-- `vip.auto_alias` remains off by default (macOS may need manual lo0 alias).
-- No corrupt-state serve-path integration test beyond store goldens (store fail-closed covered).
+- `vip.auto_alias` rejected when true (not implemented); macOS may need manual lo0 alias.
+- No corrupt-state serve-path integration test beyond store goldens (store fail-closed covered; mid-run Load fail skip covered).
 - No explicit log-redaction unit assertion for secrets (logging uses slog; inspect dumps not logged at info).
 - Worktree left clean on `feat/initial-mvp`; **not pushed**; **no PR**.
 
 ## Security checklist (MVP)
 
-- Proxies bind only allocated VIPs; dial only inspected `127.0.0.1`
-- DNS default loopback; labels cannot set destinations
-- State file 0600 / dir 0700; daemon flock; Unix control socket only
+- Proxies bind only loopback allocated VIPs (pool-checked at serve); dial only inspected `127.0.0.1`
+- DNS listen default loopback fail-closed; explicit `--dns-allow-non-loopback` escape hatch
+- Leases persisted before DNS/proxy advertise; Load failure does not wipe durable state
+- State file 0600 / dir 0700; temp open `O_NOFOLLOW`; daemon flock; Unix control socket only
 - Docker socket documented as root-equivalent in README
