@@ -3,6 +3,7 @@ module github.com/aleksclark/stacklane
 go 1.24.3
 
 require (
+	github.com/miekg/dns v1.1.72
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
 )
@@ -25,5 +26,9 @@ require (
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/mod v0.31.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/tools v0.40.0 // indirect
 )
