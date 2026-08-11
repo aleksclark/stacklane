@@ -26,6 +26,7 @@ type Endpoint struct {
 	Name        string
 	FQDN        string
 	Protocol    Protocol
+	VIP         netip.Addr // public bind address (stack VIP)
 	PublicPort  uint16
 	TargetPort  uint16
 	TargetHost  netip.Addr // must be 127.0.0.1
