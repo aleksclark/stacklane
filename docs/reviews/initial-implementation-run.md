@@ -1,10 +1,10 @@
 # Initial MVP Implementation Run Report
 
-**Branch:** `feat/initial-mvp`  
-**Final HEAD:** `c144dd3b69f16ce78aed3099f7d4c3f24c6e7a55`  
-**Base master:** `5c68ab515bf63b2d568fa010dd188c7174f7139c`  
-**Date:** 2026-08-11  
-**Module:** `github.com/aleksclark/stacklane`
+- **Branch:** `feat/initial-mvp`
+- **Final HEAD:** `2400f3348df196a7eb495e321198ed43586ccf7e`
+- **Base master:** `5c68ab515bf63b2d568fa010dd188c7174f7139c`
+- **Date:** 2026-08-11
+- **Module:** `github.com/aleksclark/stacklane`
 
 ## Outcome
 
