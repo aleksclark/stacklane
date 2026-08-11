@@ -25,14 +25,24 @@ type applyConfig struct {
 	Now           func() time.Time
 }
 
-// apply runs lease expiry, DNS replace, proxy reconcile, store save, and
-// returns the status snapshot to publish. Store save failures are logged and
-// do not tear down live proxies.
+// apply persists VIP leases first, then advertises DNS/proxy only after a
+// successful Save. If Save fails, new allocations must not be advertised.
+// Store save failures are logged and do not tear down already-live proxies.
 func apply(ctx context.Context, desired domain.DesiredState, snap state.Snapshot, cfg applyConfig) StatusSnapshot {
 	log := cfg.Logger
 	if log == nil {
 		log = slog.Default()
 	}
+
+	// Persist leases BEFORE DNS/proxy advertise so crash after advertise cannot
+	// lose durable VIP ownership for newly allocated stacks.
+	if cfg.Store != nil {
+		if err := cfg.Store.Save(snap); err != nil {
+			log.Error("state save failed; skipping dns/proxy advertise", "err", err)
+			return buildStatusSnapshot(desired, snap, cfg)
+		}
+	}
+
 	// DNS records only for stacks with ≥1 endpoint.
 	// (Expired leases are released in the engine before BuildDesired.)
 	recs := buildDNSRecords(desired, cfg.BaseDomain, cfg.DNSTTL)
@@ -56,13 +66,6 @@ func apply(ctx context.Context, desired domain.DesiredState, snap state.Snapshot
 	if cfg.Proxy != nil {
 		if err := cfg.Proxy.Reconcile(ctx, eps); err != nil {
 			log.Error("proxy reconcile failed", "err", err)
-		}
-	}
-
-	// Persist leases.
-	if cfg.Store != nil {
-		if err := cfg.Store.Save(snap); err != nil {
-			log.Error("state save failed; keeping memory", "err", err)
 		}
 	}
 
