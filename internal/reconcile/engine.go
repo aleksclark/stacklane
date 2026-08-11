@@ -236,17 +236,17 @@ func (e *Engine) reconcileOnce(ctx context.Context) {
 
 	now := e.deps.Now()
 
-	// Load durable leases.
+	// Load durable leases. On mid-run Load error: do NOT continue with empty
+	// snap and Save (that would wipe good state.json). Skip apply/save entirely.
 	var snap state.Snapshot
 	if e.deps.Store != nil {
 		loaded, err := e.deps.Store.Load()
 		if err != nil {
-			e.logger.Error("state load failed", "err", err)
-			// Keep going with empty / last-known? fail soft for loop continuity.
-			snap = state.Snapshot{Version: state.SchemaVersion}
-		} else {
-			snap = loaded
+			e.logger.Error("state load failed; skipping apply/save to avoid wiping leases", "err", err)
+			e.reconciles.Add(1)
+			return
 		}
+		snap = loaded
 	} else {
 		snap = state.Snapshot{Version: state.SchemaVersion}
 	}
