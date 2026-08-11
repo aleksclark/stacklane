@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aleksclark/stacklane/internal/domain"
+	"golang.org/x/sys/unix"
 )
 
 // SchemaVersion is the only supported on-disk snapshot version.
@@ -129,7 +130,8 @@ func (s *JSONStore) Save(snap Snapshot) error {
 	data = append(data, '\n')
 
 	tmp := s.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// O_NOFOLLOW: refuse if tmp path is a symlink (TOCTOU/symlink attack surface).
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return fmt.Errorf("state: open temp: %w", err)
 	}

@@ -290,3 +290,61 @@ func TestLoad_DurationFlags(t *testing.T) {
 		t.Error("StateResetOnCorrupt want true")
 	}
 }
+
+func TestValidate_RejectsNonLoopbackDNSListen(t *testing.T) {
+	t.Parallel()
+	c := config.Defaults()
+	c.DNSListen = "0.0.0.0:5353"
+	if err := c.Validate(); err == nil {
+		t.Fatal("want error for non-loopback dns_listen 0.0.0.0")
+	}
+	c.DNSListen = "192.168.1.10:5353"
+	if err := c.Validate(); err == nil {
+		t.Fatal("want error for non-loopback dns_listen LAN IP")
+	}
+	c.DNSListen = "[::]:5353"
+	if err := c.Validate(); err == nil {
+		t.Fatal("want error for unspecified IPv6 dns_listen")
+	}
+}
+
+func TestValidate_AllowsNonLoopbackDNSListenWithExplicitFlag(t *testing.T) {
+	t.Parallel()
+	c := config.Defaults()
+	c.DNSListen = "0.0.0.0:5353"
+	c.DNSAllowNonLoopback = true
+	if err := c.Validate(); err != nil {
+		t.Fatalf("allow flag should permit non-loopback dns_listen: %v", err)
+	}
+}
+
+func TestLoad_DNSAllowNonLoopbackFlag(t *testing.T) {
+	// Without flag, 0.0.0.0 fails closed.
+	_, err := config.Load([]string{"--dns-listen", "0.0.0.0:5353"}, func(string) string { return "" })
+	if err == nil {
+		t.Fatal("want Load error for 0.0.0.0 without allow flag")
+	}
+	c, err := config.Load([]string{
+		"--dns-listen", "0.0.0.0:5353",
+		"--dns-allow-non-loopback",
+	}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("Load with allow flag: %v", err)
+	}
+	if !c.DNSAllowNonLoopback {
+		t.Fatal("DNSAllowNonLoopback want true")
+	}
+	if c.DNSListen != "0.0.0.0:5353" {
+		t.Fatalf("DNSListen = %q", c.DNSListen)
+	}
+}
+
+func TestValidate_VIPAutoAliasNotImplemented(t *testing.T) {
+	t.Parallel()
+	c := config.Defaults()
+	c.VIPAutoAlias = true
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("want error when vip_auto_alias=true (not implemented)")
+	}
+}

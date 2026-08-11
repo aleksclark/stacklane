@@ -536,3 +536,80 @@ func TestProxy_OneListenerPerKey(t *testing.T) {
 		t.Fatalf("listener count %d want 1", n)
 	}
 }
+
+func TestProxy_RejectNonLoopbackVIP(t *testing.T) {
+	publicPort := freeTCPPort(t)
+	m := NewManager(testConfig(1024))
+	defer func() { _ = m.Shutdown(context.Background()) }()
+
+	nonLoopVIP := netip.MustParseAddr("8.8.8.8")
+	ep := endpoint(nonLoopVIP, publicPort, loopback(), 80)
+	err := m.Reconcile(context.Background(), []domain.Endpoint{ep})
+	if err == nil {
+		t.Fatal("expected error for non-loopback VIP")
+	}
+	if !errors.Is(err, ErrInvalidVIP) {
+		t.Fatalf("got %v want ErrInvalidVIP", err)
+	}
+	if m.ListenerCount() != 0 {
+		t.Fatalf("listener started for rejected VIP")
+	}
+}
+
+func TestProxy_RejectVIPOutsidePool(t *testing.T) {
+	publicPort := freeTCPPort(t)
+	// Pool is 127.77.0.0/24 usable; 127.0.0.1 is loopback but outside that pool.
+	poolPrefix := netip.MustParsePrefix("127.77.0.0/24")
+	m := NewManager(Config{
+		DialTimeout:     time.Second,
+		IdleTimeout:     0,
+		ShutdownTimeout: 2 * time.Second,
+		MaxConns:        8,
+		VIPPool:         poolPrefix,
+	})
+	defer func() { _ = m.Shutdown(context.Background()) }()
+
+	outside := netip.MustParseAddr("127.0.0.1")
+	ep := endpoint(outside, publicPort, loopback(), 80)
+	err := m.Reconcile(context.Background(), []domain.Endpoint{ep})
+	if err == nil {
+		t.Fatal("expected error for VIP outside configured pool")
+	}
+	if !errors.Is(err, ErrInvalidVIP) {
+		t.Fatalf("got %v want ErrInvalidVIP", err)
+	}
+	if m.ListenerCount() != 0 {
+		t.Fatal("listener started for out-of-pool VIP")
+	}
+
+	// In-pool loopback VIP is accepted (bind may fail if address not aliased; validation alone must pass).
+	inPool := netip.MustParseAddr("127.77.0.10")
+	// Use IsAllowedVIP-style check via validate only: Reconcile may fail on listen if OS
+	// lacks the alias — that is OK as long as error is not ErrInvalidVIP from pool/loopback.
+	ep2 := endpoint(inPool, publicPort, loopback(), freeTCPPort(t))
+	err2 := m.Reconcile(context.Background(), []domain.Endpoint{ep2})
+	if err2 != nil && errors.Is(err2, ErrInvalidVIP) {
+		t.Fatalf("in-pool VIP must not fail VIP validation: %v", err2)
+	}
+}
+
+func TestProxy_RejectWithIsAllowedVIPCallback(t *testing.T) {
+	publicPort := freeTCPPort(t)
+	allowed := netip.MustParseAddr("127.77.0.5")
+	m := NewManager(Config{
+		DialTimeout:     time.Second,
+		IdleTimeout:     0,
+		ShutdownTimeout: time.Second,
+		MaxConns:        8,
+		IsAllowedVIP: func(a netip.Addr) bool {
+			return a == allowed
+		},
+	})
+	defer func() { _ = m.Shutdown(context.Background()) }()
+
+	denied := endpoint(netip.MustParseAddr("127.77.0.9"), publicPort, loopback(), 80)
+	err := m.Reconcile(context.Background(), []domain.Endpoint{denied})
+	if err == nil || !errors.Is(err, ErrInvalidVIP) {
+		t.Fatalf("want ErrInvalidVIP for callback deny, got %v", err)
+	}
+}

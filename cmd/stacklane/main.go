@@ -167,7 +167,7 @@ Global:
 
 Serve flags:
   --docker-host --vip-pool --vip-lease-grace
-  --dns-listen --dns-base-domain --dns-default-instance --dns-ttl
+  --dns-listen --dns-allow-non-loopback --dns-base-domain --dns-default-instance --dns-ttl
   --reconcile-interval --reconcile-debounce
   --proxy-dial-timeout --proxy-idle-timeout --proxy-shutdown-timeout --proxy-max-conns
   --log-level --state-reset-on-corrupt --vip-auto-alias

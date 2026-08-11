@@ -105,6 +105,8 @@ func Serve(ctx context.Context, cfg config.Config, opts ServeOpts) error {
 		IdleTimeout:     cfg.ProxyIdleTimeout,
 		ShutdownTimeout: cfg.ProxyShutdownTimeout,
 		MaxConns:        cfg.ProxyMaxConns,
+		VIPPool:         pool.Prefix(),
+		IsAllowedVIP:    pool.Contains,
 	})
 	defer func() {
 		sctx, cancel := context.WithTimeout(context.Background(), cfg.ProxyShutdownTimeout+time.Second)

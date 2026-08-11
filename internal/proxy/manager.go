@@ -23,8 +23,9 @@ type Manager interface {
 // ErrNonLoopbackBackend is returned when an endpoint target is not 127.0.0.1 IPv4.
 var ErrNonLoopbackBackend = errors.New("proxy backend must be 127.0.0.1")
 
-// ErrInvalidVIP is returned when the public bind VIP is invalid.
-var ErrInvalidVIP = errors.New("proxy VIP must be a valid IPv4 address")
+// ErrInvalidVIP is returned when the public bind VIP is invalid (not loopback,
+// unspecified, outside pool, or rejected by IsAllowedVIP).
+var ErrInvalidVIP = errors.New("proxy VIP must be a valid loopback IPv4 address")
 
 // Config controls proxy manager timeouts and limits.
 type Config struct {
@@ -32,6 +33,14 @@ type Config struct {
 	IdleTimeout     time.Duration // default 5m; 0 may mean no idle deadline for tests
 	ShutdownTimeout time.Duration // default 5s
 	MaxConns        int           // default 1024
+
+	// VIPPool, when valid, rejects public bind VIPs outside the prefix.
+	// Optional defense-in-depth alongside allocator pool checks.
+	VIPPool netip.Prefix
+
+	// IsAllowedVIP, when non-nil, is an additional allow predicate for bind VIPs
+	// (e.g. pool Contains). Rejected addresses return ErrInvalidVIP.
+	IsAllowedVIP func(netip.Addr) bool
 }
 
 func (c Config) withDefaults() Config {
@@ -134,7 +143,7 @@ func (m *ManagerImpl) Reconcile(ctx context.Context, eps []domain.Endpoint) erro
 	desired := make(map[string]domain.Endpoint, len(eps))
 	var firstErr error
 	for _, ep := range eps {
-		if err := validateEndpoint(ep); err != nil {
+		if err := validateEndpoint(ep, m.cfg); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -182,13 +191,26 @@ func (m *ManagerImpl) Reconcile(ctx context.Context, eps []domain.Endpoint) erro
 	return firstErr
 }
 
-func validateEndpoint(ep domain.Endpoint) error {
+func validateEndpoint(ep domain.Endpoint, cfg Config) error {
 	if !ep.VIP.IsValid() || !ep.VIP.Is4() {
 		return fmt.Errorf("%w: %v", ErrInvalidVIP, ep.VIP)
 	}
 	// Public bind must not be unspecified (0.0.0.0).
 	if ep.VIP.IsUnspecified() {
 		return fmt.Errorf("%w: unspecified", ErrInvalidVIP)
+	}
+	// Fail closed: bind VIP must be loopback (127.0.0.0/8).
+	if !ep.VIP.IsLoopback() {
+		return fmt.Errorf("%w: non-loopback %v", ErrInvalidVIP, ep.VIP)
+	}
+	if cfg.VIPPool.IsValid() {
+		// Require VIP inside the configured pool prefix (network containment).
+		if !cfg.VIPPool.Contains(ep.VIP) {
+			return fmt.Errorf("%w: %v outside pool %s", ErrInvalidVIP, ep.VIP, cfg.VIPPool)
+		}
+	}
+	if cfg.IsAllowedVIP != nil && !cfg.IsAllowedVIP(ep.VIP) {
+		return fmt.Errorf("%w: %v not allowed by policy", ErrInvalidVIP, ep.VIP)
 	}
 	if ep.PublicPort == 0 {
 		return fmt.Errorf("public port must be non-zero")

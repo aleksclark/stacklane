@@ -20,6 +20,7 @@ type Config struct {
 	VIPPool              string // CIDR
 	VIPLeaseGrace        time.Duration
 	DNSListen            string
+	DNSAllowNonLoopback  bool // escape hatch; default false fails closed on non-loopback listen
 	DNSBaseDomain        string
 	DNSDefaultInstance   string
 	DNSTTL               uint32
@@ -45,6 +46,7 @@ type fileConfig struct {
 	VIPPool              *string `json:"vip_pool"`
 	VIPLeaseGrace        *string `json:"vip_lease_grace"`
 	DNSListen            *string `json:"dns_listen"`
+	DNSAllowNonLoopback  *bool   `json:"dns_allow_non_loopback"`
 	DNSBaseDomain        *string `json:"dns_base_domain"`
 	DNSDefaultInstance   *string `json:"dns_default_instance"`
 	DNSTTL               *uint32 `json:"dns_ttl"`
@@ -101,8 +103,12 @@ func (c Config) Validate() error {
 	if c.DNSListen == "" {
 		return fmt.Errorf("dns_listen must be non-empty")
 	}
-	if _, err := net.ResolveUDPAddr("udp", c.DNSListen); err != nil {
+	udpAddr, err := net.ResolveUDPAddr("udp", c.DNSListen)
+	if err != nil {
 		return fmt.Errorf("dns_listen: %w", err)
+	}
+	if err := validateDNSListenHost(udpAddr, c.DNSAllowNonLoopback); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.DNSBaseDomain) == "" {
 		return fmt.Errorf("dns_base_domain must be non-empty")
@@ -136,6 +142,29 @@ func (c Config) Validate() error {
 	}
 	if c.LogLevel == "" {
 		return fmt.Errorf("log_level must be non-empty")
+	}
+	if c.VIPAutoAlias {
+		return fmt.Errorf("vip_auto_alias is not implemented; leave false (manual lo0/alias setup if needed)")
+	}
+	return nil
+}
+
+// validateDNSListenHost requires loopback (or unspecified-with-allow) by default.
+// Hostnames that resolve only at bind time are rejected unless they parse as loopback IPs.
+func validateDNSListenHost(addr *net.UDPAddr, allowNonLoopback bool) error {
+	if addr == nil {
+		return fmt.Errorf("dns_listen: empty address")
+	}
+	ip := addr.IP
+	if ip == nil {
+		// ResolveUDPAddr without a host can leave IP nil for some forms; reject.
+		return fmt.Errorf("dns_listen: host must be an explicit IP (got nil)")
+	}
+	if ip.IsUnspecified() || !ip.IsLoopback() {
+		if allowNonLoopback {
+			return nil
+		}
+		return fmt.Errorf("dns_listen must be loopback (got %s); set --dns-allow-non-loopback to override", addr.String())
 	}
 	return nil
 }
@@ -310,6 +339,9 @@ func applyFile(cfg *Config, path string) error {
 	if fc.DNSListen != nil {
 		cfg.DNSListen = *fc.DNSListen
 	}
+	if fc.DNSAllowNonLoopback != nil {
+		cfg.DNSAllowNonLoopback = *fc.DNSAllowNonLoopback
+	}
 	if fc.DNSBaseDomain != nil {
 		cfg.DNSBaseDomain = *fc.DNSBaseDomain
 	}
@@ -387,6 +419,14 @@ func applyEnv(cfg *Config, getenv func(string) string) {
 	if v := getenv("STACKLANE_DNS_LISTEN"); v != "" {
 		cfg.DNSListen = v
 	}
+	if v := getenv("STACKLANE_DNS_ALLOW_NON_LOOPBACK"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.DNSAllowNonLoopback = true
+		case "0", "false", "no", "off":
+			cfg.DNSAllowNonLoopback = false
+		}
+	}
 	if v := getenv("STACKLANE_DNS_BASE_DOMAIN"); v != "" {
 		cfg.DNSBaseDomain = v
 	}
@@ -423,6 +463,7 @@ func applyFlags(cfg *Config, args []string) error {
 	vipPool := fs.String("vip-pool", cfg.VIPPool, "VIP pool CIDR")
 	vipLeaseGrace := fs.Duration("vip-lease-grace", cfg.VIPLeaseGrace, "VIP lease grace")
 	dnsListen := fs.String("dns-listen", cfg.DNSListen, "DNS listen address")
+	dnsAllowNonLoopback := fs.Bool("dns-allow-non-loopback", cfg.DNSAllowNonLoopback, "allow non-loopback DNS listen (fail-open escape hatch)")
 	dnsBaseDomain := fs.String("dns-base-domain", cfg.DNSBaseDomain, "DNS base domain")
 	dnsDefaultInstance := fs.String("dns-default-instance", cfg.DNSDefaultInstance, "default instance slug")
 	dnsTTL := fs.Uint("dns-ttl", uint(cfg.DNSTTL), "DNS TTL seconds")
@@ -434,7 +475,7 @@ func applyFlags(cfg *Config, args []string) error {
 	proxyMaxConns := fs.Int("proxy-max-conns", cfg.ProxyMaxConns, "proxy max connections")
 	logLevel := fs.String("log-level", cfg.LogLevel, "log level")
 	stateReset := fs.Bool("state-reset-on-corrupt", cfg.StateResetOnCorrupt, "reset state on corrupt")
-	vipAutoAlias := fs.Bool("vip-auto-alias", cfg.VIPAutoAlias, "auto-add VIP aliases")
+	vipAutoAlias := fs.Bool("vip-auto-alias", cfg.VIPAutoAlias, "auto-add VIP aliases (not implemented)")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("flags: %w", err)
@@ -465,6 +506,9 @@ func applyFlags(cfg *Config, args []string) error {
 	}
 	if set["dns-listen"] {
 		cfg.DNSListen = *dnsListen
+	}
+	if set["dns-allow-non-loopback"] {
+		cfg.DNSAllowNonLoopback = *dnsAllowNonLoopback
 	}
 	if set["dns-base-domain"] {
 		cfg.DNSBaseDomain = *dnsBaseDomain
