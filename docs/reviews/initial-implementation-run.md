@@ -1,20 +1,25 @@
 # Initial MVP Implementation Run Report
 
+- **Worktree:** `/home/aleks/work/projects/stacklane/worktrees/initial-mvp`
 - **Branch:** `feat/initial-mvp`
-- **Feature content HEAD (code):** `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9`
+- **Final HEAD:** `d71a45`
+- **Approved code tip (pre-docs-bind):** `07a7b54e3d0416e5f1914eef3f6997b58eab142b`
 - **Base master:** `5c68ab515bf63b2d568fa010dd188c7174f7139c`
 - **Date:** 2026-08-11
 - **Module:** `github.com/aleksclark/stacklane`
+- **Independent review verdict:** **APPROVED** @ `d71a45`
 
 ## Outcome
 
 Functional MVP delivered: `stacklane serve` / `status` / `resolve` with Docker event+periodic reconcile, durable VIP leases, authoritative `stacklane.test` DNS, and TCP proxy VIP→loopback-only backends.
 
-Security/integration review Important findings remediated with TDD (see below).
+Security/integration review: first **CHANGES_REQUIRED** @ `fb4ff56`; Important findings remediated with TDD; final **VERDICT: APPROVED** @ `d71a45`.
 
 ## Commit list (from base master)
 
 ```
+d71a45 docs: bind final review verdict in run report
+07a7b54 docs: refresh run report after security remediation
 b6ded0e fix: require loopback vip and dns listen defaults
 dc19fbe fix: skip reconcile save when state load fails
 4fe3e97 fix: persist vip leases before advertising dns and proxy
@@ -56,9 +61,18 @@ testdata/state/
 
 No repository-root `*.go` files.
 
-## Security review remediation (Important)
+## Independent review
 
-Code HEAD for remediations: `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9`.
+| Stage | SHA | Verdict |
+|---|---|---|
+| First independent review | `fb4ff56` | **CHANGES_REQUIRED** |
+| Remediation | `4fe3e97`, `dc19fbe`, `b6ded0e` | Important findings fixed (TDD) |
+| Post-remediation docs | `07a7b54` | Run report refreshed |
+| Final bind (this commit) | `d71a45` | **APPROVED** |
+
+### Security review remediation (Important)
+
+Code tip for remediations: `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9` (within `07a7b54` tip lineage).
 
 | Finding | Fix | Regression tests |
 |---|---|---|
@@ -72,17 +86,30 @@ Minors also landed in the same remediation pass:
 - State temp write uses `O_NOFOLLOW` (Linux)
 - `vip_auto_alias=true` fails validation as not implemented (no silent no-op)
 
-## Gate evidence (real)
+## Gate evidence (real, re-run at final bind)
 
-### `make ci` — PASS (post-remediation)
+### `make ci` — PASS
 
 ```
 go vet ./...
 go test -race ./...
-# all packages ok (cmd has no test files)
+?   	github.com/aleksclark/stacklane/cmd/stacklane	[no test files]
+ok  	github.com/aleksclark/stacklane/internal/app	(cached)
+ok  	github.com/aleksclark/stacklane/internal/config	(cached)
+ok  	github.com/aleksclark/stacklane/internal/dns	(cached)
+ok  	github.com/aleksclark/stacklane/internal/dockerapi	(cached)
+ok  	github.com/aleksclark/stacklane/internal/dockerapi/fake	(cached)
+ok  	github.com/aleksclark/stacklane/internal/domain	(cached)
+ok  	github.com/aleksclark/stacklane/internal/labels	(cached)
+ok  	github.com/aleksclark/stacklane/internal/proxy	(cached)
+ok  	github.com/aleksclark/stacklane/internal/reconcile	(cached)
+ok  	github.com/aleksclark/stacklane/internal/state	(cached)
+ok  	github.com/aleksclark/stacklane/internal/version	(cached)
+ok  	github.com/aleksclark/stacklane/internal/vip	(cached)
 go build -o bin/stacklane ./cmd/stacklane
 git diff --check
 test -z "$(gofmt -l cmd internal)"
+# exit 0
 ```
 
 ### Fake-Docker integration — PASS
@@ -109,20 +136,32 @@ Docker available (`docker info` OK).
 ```
 $ make e2e
 E2E=1 go test -race -tags=e2e ./internal/app -count=1
-ok  	github.com/aleksclark/stacklane/internal/app	3.031s
+ok  	github.com/aleksclark/stacklane/internal/app	2.905s
+# exit 0
 ```
 
 Scenario: two compose projects (`testdata/compose/stack-a`, `stack-b`) with `hashicorp/http-echo`, labels `alpha`/`beta` + `curri` + `app:8080`, publish `127.0.0.1::8080`. Asserted distinct VIPs, DNS A records, and HTTP bodies A≠B via VIP:8080.
 
 ### `git diff --check master...HEAD` — PASS
 
-## Residual gaps / notes
+```
+$ git diff --check master...HEAD
+# exit 0 (no whitespace errors)
+```
+
+## Residual limitations
 
 - Host resolver installer intentionally **NOT implemented** (documented in README).
 - `vip.auto_alias` rejected when true (not implemented); macOS may need manual lo0 alias.
+- No TLS termination, UDP proxy, service mesh, or packaging in this MVP.
 - No corrupt-state serve-path integration test beyond store goldens (store fail-closed covered; mid-run Load fail skip covered).
 - No explicit log-redaction unit assertion for secrets (logging uses slog; inspect dumps not logged at info).
-- Worktree left clean on `feat/initial-mvp`; **not pushed**; **no PR**.
+
+## Delivery status
+
+- Branch `feat/initial-mvp` pushed to `origin`
+- PR opened targeting `master` (unmerged)
+- Main repo `master` left untouched at `5c68ab515bf63b2d568fa010dd188c7174f7139c`
 
 ## Security checklist (MVP)
 
