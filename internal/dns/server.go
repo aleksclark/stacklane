@@ -125,6 +125,8 @@ func (s *Server) ListenAddr() string {
 }
 
 // SetRecords replaces the entire dynamic A record set atomically.
+// Non-loopback A-record VIPs are rejected (defense in depth); the prior
+// record set is left unchanged when validation fails.
 func (s *Server) SetRecords(recs []Record) error {
 	next := make(recordSet, len(recs))
 	for _, r := range recs {
@@ -133,6 +135,9 @@ func (s *Server) SetRecords(recs []Record) error {
 		}
 		if !r.VIP.IsValid() || !r.VIP.Is4() {
 			return fmt.Errorf("dns: record %q requires IPv4 VIP", r.Name)
+		}
+		if !r.VIP.IsLoopback() {
+			return fmt.Errorf("dns: record %q VIP must be loopback, got %s", r.Name, r.VIP)
 		}
 		key := mdns.CanonicalName(mdns.Fqdn(r.Name))
 		if !s.inZone(key) {

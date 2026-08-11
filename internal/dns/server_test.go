@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -285,6 +286,48 @@ func TestSetRecords_ReplacesAtomically(t *testing.T) {
 	resp2 := query(t, s.ListenAddr(), name, mdns.TypeA)
 	if resp2.Rcode != mdns.RcodeNameError {
 		t.Fatalf("removed name rcode=%v want NXDOMAIN", mdns.RcodeToString[resp2.Rcode])
+	}
+}
+
+func TestSetRecords_RejectsNonLoopbackVIP(t *testing.T) {
+	t.Parallel()
+	s := startServer(t)
+	good := netip.MustParseAddr("127.77.0.1")
+	name := "app.stacklane.test"
+	mustSet(t, s, []dns.Record{{Name: name, Type: "A", VIP: good, TTL: 5}})
+
+	// Pure rejection: non-loopback VIP must error.
+	nonLoop := netip.MustParseAddr("8.8.8.8")
+	err := s.SetRecords([]dns.Record{{Name: name, Type: "A", VIP: nonLoop, TTL: 5}})
+	if err == nil {
+		t.Fatal("expected error for non-loopback A-record VIP")
+	}
+	if !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("error %q should mention loopback", err)
+	}
+
+	// Defense in depth: prior good records must remain when validation fails.
+	resp := query(t, s.ListenAddr(), name, mdns.TypeA)
+	if resp.Rcode != mdns.RcodeSuccess {
+		t.Fatalf("prior record cleared on reject: rcode=%v", mdns.RcodeToString[resp.Rcode])
+	}
+	a := resp.Answer[0].(*mdns.A)
+	if a.A.String() != good.String() {
+		t.Fatalf("prior A=%s want %s after rejected SetRecords", a.A, good)
+	}
+
+	// Mixed batch with one bad VIP must reject entirely (no partial apply).
+	err = s.SetRecords([]dns.Record{
+		{Name: name, Type: "A", VIP: good, TTL: 5},
+		{Name: "other.stacklane.test", Type: "A", VIP: netip.MustParseAddr("10.0.0.1"), TTL: 5},
+	})
+	if err == nil {
+		t.Fatal("expected error for mixed batch with non-loopback VIP")
+	}
+	resp2 := query(t, s.ListenAddr(), name, mdns.TypeA)
+	a2 := resp2.Answer[0].(*mdns.A)
+	if a2.A.String() != good.String() {
+		t.Fatalf("mixed reject mutated prior A=%s want %s", a2.A, good)
 	}
 }
 

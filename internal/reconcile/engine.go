@@ -255,12 +255,15 @@ func (e *Engine) reconcileOnce(ctx context.Context) {
 	if e.deps.Docker != nil {
 		list, err := e.deps.Docker.ListRunning(rctx)
 		if err != nil {
-			e.logger.Error("docker list failed", "err", err)
-			// Still run lease expiry / publish empty-ish desired from no containers.
-			containers = nil
-		} else {
-			containers = list
+			// Transient Docker API errors must not be treated as an authoritative
+			// empty inventory: that would clear DNS (SetRecords([])) and stop all
+			// proxy listeners. Retain last-known-good runtime advertisement by
+			// skipping desired rebuild/apply/save for this cycle.
+			e.logger.Error("docker list failed; skipping apply/save to retain last-known-good dns/proxy", "err", err)
+			e.reconciles.Add(1)
+			return
 		}
+		containers = list
 	}
 
 	// Release expired leases before allocation so VIPs become reusable.

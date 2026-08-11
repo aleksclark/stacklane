@@ -216,4 +216,4 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional D
 ## Docs
 
 - Implementation plan: [`docs/plans/initial-mvp.md`](docs/plans/initial-mvp.md)
-- Post-implementation run report (future): `docs/reviews/initial-implementation-run.md`
+- Post-implementation run report: [`docs/reviews/initial-implementation-run.md`](docs/reviews/initial-implementation-run.md)

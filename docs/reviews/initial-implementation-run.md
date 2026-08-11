@@ -2,22 +2,23 @@
 
 - **Worktree:** `/home/aleks/work/projects/stacklane/worktrees/initial-mvp`
 - **Branch:** `feat/initial-mvp`
-- **Final HEAD:** `d71a45`
-- **Approved code tip (pre-docs-bind):** `07a7b54e3d0416e5f1914eef3f6997b58eab142b`
+- **Final HEAD:** feat/initial-mvp tip (final review pending)
+- **Prior approved tip:** `d71a45f3f9675608f50a9a342a2098f5b05881d4`
 - **Base master:** `5c68ab515bf63b2d568fa010dd188c7174f7139c`
 - **Date:** 2026-08-11
 - **Module:** `github.com/aleksclark/stacklane`
-- **Independent review verdict:** **APPROVED** @ `d71a45`
+- **Independent review verdict:** **final review pending** @ feat/initial-mvp tip after ListRunning fail-closed fix
 
 ## Outcome
 
 Functional MVP delivered: `stacklane serve` / `status` / `resolve` with Docker event+periodic reconcile, durable VIP leases, authoritative `stacklane.test` DNS, and TCP proxy VIP→loopback-only backends.
 
-Security/integration review: first **CHANGES_REQUIRED** @ `fb4ff56`; Important findings remediated with TDD; final **VERDICT: APPROVED** @ `d71a45`.
+Security/integration review: first **CHANGES_REQUIRED** @ `fb4ff56`; Important findings remediated with TDD; prior **VERDICT: APPROVED** @ `d71a45`. Post-approval exact-tip finding (Docker `ListRunning` fail-closed teardown) remediated with TDD; **final review pending** at new tip.
 
 ## Commit list (from base master)
 
 ```
+(tip) fix: skip apply on docker ListRunning error (fail-closed)
 d71a45 docs: bind final review verdict in run report
 07a7b54 docs: refresh run report after security remediation
 b6ded0e fix: require loopback vip and dns listen defaults
@@ -68,7 +69,8 @@ No repository-root `*.go` files.
 | First independent review | `fb4ff56` | **CHANGES_REQUIRED** |
 | Remediation | `4fe3e97`, `dc19fbe`, `b6ded0e` | Important findings fixed (TDD) |
 | Post-remediation docs | `07a7b54` | Run report refreshed |
-| Final bind (this commit) | `d71a45` | **APPROVED** |
+| Prior final bind | `d71a45` | **APPROVED** |
+| Post-approval ListRunning fix | feat/initial-mvp tip | **final review pending** |
 
 ### Security review remediation (Important)
 
@@ -78,13 +80,16 @@ Code tip for remediations: `b6ded0e5e90bfbdf53d1ef6e77f16908c801f0b9` (within `0
 |---|---|---|
 | Persist VIP leases before DNS/proxy advertise | `apply`: Save → SetRecords → Reconcile; Save fail skips advertise | `TestApply_PersistsLeasesBeforeDNSAndProxy`, `TestApply_SaveFailureDoesNotAdvertise` |
 | Runtime Store.Load failure must not wipe leases | `reconcileOnce`: Load err → skip apply/save (no empty snap Save) | `TestReconcile_LoadErrorDoesNotSaveEmptyOrClobber` |
+| Docker ListRunning failure must not teardown DNS/proxy | `reconcileOnce`: ListRunning err → skip rebuild/apply/save; retain last-known-good | `TestReconcile_ListRunningErrorDoesNotTeardownDNSProxyOrLeases` |
 | Proxy bind VIP must be loopback (+ pool) | `validateEndpoint`: `VIP.IsLoopback()`; optional `VIPPool` / `IsAllowedVIP`; serve wires pool | `TestProxy_RejectNonLoopbackVIP`, `TestProxy_RejectVIPOutsidePool`, `TestProxy_RejectWithIsAllowedVIPCallback` |
 | DNS listen loopback fail-closed | Validate host is loopback unless `--dns-allow-non-loopback` | `TestValidate_RejectsNonLoopbackDNSListen`, `TestLoad_DNSAllowNonLoopbackFlag`, `TestValidate_AllowsNonLoopbackDNSListenWithExplicitFlag` |
+| DNS SetRecords non-loopback VIP rejected | `SetRecords` rejects non-loopback A VIPs; prior set unchanged | `TestSetRecords_RejectsNonLoopbackVIP` |
 
 Minors also landed in the same remediation pass:
 
 - State temp write uses `O_NOFOLLOW` (Linux)
 - `vip_auto_alias=true` fails validation as not implemented (no silent no-op)
+- README run report link no longer labeled “future”
 
 ## Gate evidence (real, re-run at final bind)
 
