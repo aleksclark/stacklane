@@ -1,0 +1,11 @@
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local environment and generated state
+.env
+.env.*
+!.env.example
+.stacklane/
