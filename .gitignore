@@ -9,3 +9,6 @@
 .env.*
 !.env.example
 .stacklane/
+
+# Build output
+/bin/

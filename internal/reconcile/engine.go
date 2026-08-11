@@ -18,22 +18,22 @@ import (
 
 // Deps wires collaborators for the reconcile engine.
 type Deps struct {
-	Docker          dockerapi.Client
-	Store           state.Store
-	Alloc           vip.Allocator
-	DNS             dns.Controller
-	Proxy           proxy.Manager
-	BaseDomain      string
-	DefaultInstance string
-	DNSTTL          uint32
-	DNSListen       string // optional override for status
-	VIPPool         string // optional, for status display
-	VIPLeaseGrace   time.Duration
+	Docker            dockerapi.Client
+	Store             state.Store
+	Alloc             vip.Allocator
+	DNS               dns.Controller
+	Proxy             proxy.Manager
+	BaseDomain        string
+	DefaultInstance   string
+	DNSTTL            uint32
+	DNSListen         string // optional override for status
+	VIPPool           string // optional, for status display
+	VIPLeaseGrace     time.Duration
 	ReconcileInterval time.Duration
 	ReconcileDebounce time.Duration
 	ReconcileTimeout  time.Duration
-	Now             func() time.Time
-	Logger          *slog.Logger
+	Now               func() time.Time
+	Logger            *slog.Logger
 }
 
 // StatusEndpoint is one published endpoint in a status snapshot.

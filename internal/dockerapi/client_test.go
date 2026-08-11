@@ -160,13 +160,13 @@ func TestSDKClient_Close(t *testing.T) {
 }
 
 type stubSDK struct {
-	list         mobyclient.ContainerListResult
-	listErr      error
-	listCalled   bool
-	listAll      bool
-	eventsResult mobyclient.EventsResult
+	list          mobyclient.ContainerListResult
+	listErr       error
+	listCalled    bool
+	listAll       bool
+	eventsResult  mobyclient.EventsResult
 	eventsFilters mobyclient.Filters
-	closed       bool
+	closed        bool
 }
 
 func (s *stubSDK) ContainerList(ctx context.Context, options mobyclient.ContainerListOptions) (mobyclient.ContainerListResult, error) {

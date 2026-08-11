@@ -76,12 +76,12 @@ func TestValidateSlug_Invalid(t *testing.T) {
 	t.Parallel()
 	invalid := []string{
 		"",
-		"Feature",             // uppercase
-		"feature_a",           // underscore
-		"feature.a",           // dot
-		"-feature",            // leading hyphen
-		"feature-",            // trailing hyphen
-		"FEATURE-A",           // uppercase
+		"Feature",               // uppercase
+		"feature_a",             // underscore
+		"feature.a",             // dot
+		"-feature",              // leading hyphen
+		"feature-",              // trailing hyphen
+		"FEATURE-A",             // uppercase
 		strings.Repeat("a", 64), // too long
 	}
 	for _, s := range invalid {

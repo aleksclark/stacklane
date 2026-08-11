@@ -204,7 +204,7 @@ func TestInvalidLabelsAndNonLoopbackIgnored(t *testing.T) {
 		ID:   "bad01",
 		Name: "bad",
 		Labels: map[string]string{
-			labels.EnableKey:        "true",
+			labels.EnableKey:         "true",
 			labels.ComposeProjectKey: "p",
 			labels.ComposeServiceKey: "s",
 			// missing project/endpoint/port
@@ -302,10 +302,10 @@ type harness struct {
 	cancel  context.CancelFunc
 	done    chan error
 
-	mu      sync.Mutex
-	nowFn   func() time.Time
-	clock   time.Time
-	grace   time.Duration
+	mu    sync.Mutex
+	nowFn func() time.Time
+	clock time.Time
+	grace time.Duration
 }
 
 func newHarness(t *testing.T) *harness {

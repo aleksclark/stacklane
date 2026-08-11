@@ -236,10 +236,10 @@ func Serve(ctx context.Context, cfg config.Config, opts ServeOpts) error {
 
 // publicStatus is the JSON shape for GET /status (plan §12.5).
 type publicStatusBody struct {
-	Daemon     string                `json:"daemon"`
-	DNSListen  string                `json:"dns_listen"`
-	BaseDomain string                `json:"base_domain"`
-	VIPPool    string                `json:"vip_pool,omitempty"`
+	Daemon     string                  `json:"daemon"`
+	DNSListen  string                  `json:"dns_listen"`
+	BaseDomain string                  `json:"base_domain"`
+	VIPPool    string                  `json:"vip_pool,omitempty"`
 	Stacks     []reconcile.StatusStack `json:"stacks"`
 }
 
