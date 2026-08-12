@@ -287,7 +287,47 @@ session count and idle expiry (multi-client safe — not single-client serializa
   proxy is out of scope.
 - TCP endpoints can still be published with Stacklane labels + VIP proxy as usual.
 
-### Production image
+### Production image (GHCR drop-in)
+
+Published multi-arch images (`linux/amd64`, `linux/arm64`) are built from
+`Dockerfile.relay` on **GitHub Release publish** only
+(`.github/workflows/release-relay-image.yml`) and pushed to:
+
+```text
+ghcr.io/aleksclark/stacklane-relay
+```
+
+Drop-in (no local build):
+
+```bash
+docker pull ghcr.io/aleksclark/stacklane-relay:latest
+# Prefer pinning a release tag or digest for reproducibility:
+#   ghcr.io/aleksclark/stacklane-relay:v1.2.3
+#   ghcr.io/aleksclark/stacklane-relay@sha256:<digest>
+```
+
+Release tags produced by the workflow (metadata-action):
+
+| GitHub release tag | Image tags |
+|--------------------|------------|
+| `v1.2.3` (stable) | `v1.2.3`, `1.2.3`, `1.2`, `latest` |
+| `v1.2.3-rc.1` (prerelease) | `v1.2.3-rc.1`, `1.2.3-rc.1` only — **never** moves `latest` or `1.2` |
+
+Images carry OCI labels/annotations (`org.opencontainers.image.source` →
+https://github.com/aleksclark/stacklane, description, revision/version, MIT
+license) on manifests and the multi-arch index, plus registry provenance/SBOM
+attestations bound to the multi-arch digest.
+
+**One-time operator step after the first publication:** GHCR packages default to
+**private**, independent of repo visibility. For anonymous
+`docker compose pull` / public consumers, open the package
+`stacklane-relay` on GitHub → **Package settings** → set visibility to
+**Public**. Do **not** automate this (irreversible without delete/recreate in
+practice). Keep the package linked to this repository so
+`GITHUB_TOKEN` workflow access stays correct. Until that step, authenticated
+pulls still work for accounts with package read access.
+
+Local build (dev / offline):
 
 ```bash
 docker build -f Dockerfile.relay -t stacklane-relay:local .
@@ -295,6 +335,9 @@ docker build -f Dockerfile.relay -t stacklane-relay:local .
 ```
 
 ### Compose example (loopback ephemeral + labels)
+
+No local build required — pull the published image. Hardening matches the
+scratch image (`user 65532`, read-only rootfs, dropped caps, no-new-privileges):
 
 ```yaml
 services:
@@ -304,7 +347,8 @@ services:
     expose: ["3000"]
 
   app-relay:
-    image: stacklane-relay:local
+    image: ghcr.io/aleksclark/stacklane-relay:latest
+    # pin for prod: ghcr.io/aleksclark/stacklane-relay:v1.2.3
     user: "65532:65532"
     read_only: true
     cap_drop: ["ALL"]
@@ -327,7 +371,8 @@ on the Compose service port (e.g. `coredns:53`):
 
 ```yaml
   dns-relay:
-    image: stacklane-relay:local
+    image: ghcr.io/aleksclark/stacklane-relay:latest
+    # pin for prod: ghcr.io/aleksclark/stacklane-relay:v1.2.3
     user: "65532:65532"
     read_only: true
     cap_drop: ["ALL"]
@@ -347,7 +392,7 @@ make install     # scripts/install.sh (binary + systemd + dns on Linux)
 make uninstall   # reverse install artifacts
 ```
 
-CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional Docker `make e2e` job. Actions are pinned to full commit SHAs.
+CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional Docker `make e2e` job. Release image publish (`.github/workflows/release-relay-image.yml`) runs only on `release: published` and pushes multi-arch `ghcr.io/aleksclark/stacklane-relay`. Actions are pinned to full commit SHAs.
 
 ## Docs
 

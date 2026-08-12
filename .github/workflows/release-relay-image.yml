@@ -1,0 +1,98 @@
+# Publish multi-arch stacklane-relay image to GHCR on GitHub Release publish only.
+# Does not run on push/pull_request. Never mutates package visibility.
+name: release-relay-image
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-relay-image-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: aleksclark/stacklane-relay
+  # Apply OCI annotations to both platform manifests and the multi-arch index.
+  DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Stable v1.2.3 → tags: v1.2.3, 1.2.3, 1.2, latest
+          # Prerelease v1.2.3-rc.1 → tags: v1.2.3-rc.1, 1.2.3-rc.1 (no 1.2, no latest)
+          flavor: |
+            latest=auto
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ github.event.release.tag_name }}
+          labels: |
+            org.opencontainers.image.title=stacklane-relay
+            org.opencontainers.image.description=Unprivileged multi-arch L4 TCP/UDP relay for Stacklane Compose networks
+            org.opencontainers.image.source=https://github.com/aleksclark/stacklane
+            org.opencontainers.image.url=https://github.com/aleksclark/stacklane
+            org.opencontainers.image.documentation=https://github.com/aleksclark/stacklane#stacklane-relay-containerized-l4-tcpudp
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=aleksclark
+          annotations: |
+            org.opencontainers.image.title=stacklane-relay
+            org.opencontainers.image.description=Unprivileged multi-arch L4 TCP/UDP relay for Stacklane Compose networks
+            org.opencontainers.image.source=https://github.com/aleksclark/stacklane
+            org.opencontainers.image.url=https://github.com/aleksclark/stacklane
+            org.opencontainers.image.documentation=https://github.com/aleksclark/stacklane#stacklane-relay-containerized-l4-tcpudp
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=aleksclark
+
+      - name: Build and push multi-arch image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile.relay
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # Registry-published BuildKit provenance + SBOM on the multi-arch index.
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest image provenance (GitHub + registry)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
