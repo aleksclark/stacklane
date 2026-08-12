@@ -290,34 +290,36 @@ session count and idle expiry (multi-client safe — not single-client serializa
 ### Production image (GHCR drop-in)
 
 Published multi-arch images (`linux/amd64`, `linux/arm64`) are built from
-`Dockerfile.relay` on **GitHub Release publish** only
+`Dockerfile.relay` on **every push to `master`**
 (`.github/workflows/release-relay-image.yml`) and pushed to:
 
 ```text
 ghcr.io/aleksclark/stacklane-relay
 ```
 
+The workflow does **not** create GitHub Release objects and does not run on
+pull requests, release events, or manual dispatch. Master publishes are
+serialized (`concurrency` group `release-relay-image-master`,
+`cancel-in-progress: false`) so an older build cannot overwrite `latest`
+after a newer one.
+
 Drop-in (no local build):
 
 ```bash
 docker pull ghcr.io/aleksclark/stacklane-relay:latest
-# Prefer pinning a release tag or digest for reproducibility:
-#   ghcr.io/aleksclark/stacklane-relay:v1.2.3
+# Prefer pinning the immutable full-SHA tag or digest for reproducibility:
+#   ghcr.io/aleksclark/stacklane-relay:sha-<40-char-commit-sha>
 #   ghcr.io/aleksclark/stacklane-relay@sha256:<digest>
 ```
 
-Release tags produced by the workflow (metadata-action). Floating tags
-(`latest`, `major.minor`) are emitted **only** when the GitHub release has
-`prerelease=false` **and** the tag matches stable semver `^v?[0-9]+\.[0-9]+\.[0-9]+$`
-(no pre-release suffix). A release marked prerelease with a stable-looking tag
-(e.g. `v1.2.3` + prerelease) does **not** move floating tags.
+Image tags produced by the workflow (metadata-action) on each master push:
 
-| GitHub release | Image tags |
-|----------------|------------|
-| tag `v1.2.3`, prerelease=false | `v1.2.3`, `1.2.3`, `1.2`, `latest` |
-| tag `v1.2.3`, prerelease=true | `v1.2.3`, `1.2.3` only — **no** `1.2` / `latest` |
-| tag `v1.2.3-rc.1` (prerelease true or false) | `v1.2.3-rc.1`, `1.2.3-rc.1` only — **no** `1.2` / `latest` |
-| nonsemver tag (e.g. `hotfix/nightly`) | exact ref tag only — **no** `latest` / minor |
+| Tag | Meaning |
+|-----|---------|
+| `latest` | Floating tip of `master` (convenience) |
+| `sha-<full commit sha>` | Immutable image for that exact git commit |
+
+No semver, branch, or prerelease tags are emitted.
 
 Images carry OCI labels/annotations (`org.opencontainers.image.source` →
 https://github.com/aleksclark/stacklane, description, revision/version; no
@@ -355,7 +357,7 @@ services:
 
   app-relay:
     image: ghcr.io/aleksclark/stacklane-relay:latest
-    # pin for prod: ghcr.io/aleksclark/stacklane-relay:v1.2.3
+    # pin for prod: ghcr.io/aleksclark/stacklane-relay:sha-<full-commit-sha>
     user: "65532:65532"
     read_only: true
     cap_drop: ["ALL"]
@@ -379,7 +381,7 @@ on the Compose service port (e.g. `coredns:53`):
 ```yaml
   dns-relay:
     image: ghcr.io/aleksclark/stacklane-relay:latest
-    # pin for prod: ghcr.io/aleksclark/stacklane-relay:v1.2.3
+    # pin for prod: ghcr.io/aleksclark/stacklane-relay:sha-<full-commit-sha>
     user: "65532:65532"
     read_only: true
     cap_drop: ["ALL"]
@@ -399,7 +401,7 @@ make install     # scripts/install.sh (binary + systemd + dns on Linux)
 make uninstall   # reverse install artifacts
 ```
 
-CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional Docker `make e2e` job. Release image publish (`.github/workflows/release-relay-image.yml`) runs only on `release: published` and pushes multi-arch `ghcr.io/aleksclark/stacklane-relay`. Actions are pinned to full commit SHAs.
+CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional Docker `make e2e` job. Relay image publish (`.github/workflows/release-relay-image.yml`) runs on every push to `master` and pushes multi-arch `ghcr.io/aleksclark/stacklane-relay` tagged `latest` and `sha-<full commit sha>`. Actions are pinned to full commit SHAs.
 
 ## Docs
 
