@@ -306,17 +306,24 @@ docker pull ghcr.io/aleksclark/stacklane-relay:latest
 #   ghcr.io/aleksclark/stacklane-relay@sha256:<digest>
 ```
 
-Release tags produced by the workflow (metadata-action):
+Release tags produced by the workflow (metadata-action). Floating tags
+(`latest`, `major.minor`) are emitted **only** when the GitHub release has
+`prerelease=false` **and** the tag matches stable semver `^v?[0-9]+\.[0-9]+\.[0-9]+$`
+(no pre-release suffix). A release marked prerelease with a stable-looking tag
+(e.g. `v1.2.3` + prerelease) does **not** move floating tags.
 
-| GitHub release tag | Image tags |
-|--------------------|------------|
-| `v1.2.3` (stable) | `v1.2.3`, `1.2.3`, `1.2`, `latest` |
-| `v1.2.3-rc.1` (prerelease) | `v1.2.3-rc.1`, `1.2.3-rc.1` only — **never** moves `latest` or `1.2` |
+| GitHub release | Image tags |
+|----------------|------------|
+| tag `v1.2.3`, prerelease=false | `v1.2.3`, `1.2.3`, `1.2`, `latest` |
+| tag `v1.2.3`, prerelease=true | `v1.2.3`, `1.2.3` only — **no** `1.2` / `latest` |
+| tag `v1.2.3-rc.1` (prerelease true or false) | `v1.2.3-rc.1`, `1.2.3-rc.1` only — **no** `1.2` / `latest` |
+| nonsemver tag (e.g. `hotfix/nightly`) | exact ref tag only — **no** `latest` / minor |
 
 Images carry OCI labels/annotations (`org.opencontainers.image.source` →
-https://github.com/aleksclark/stacklane, description, revision/version, MIT
-license) on manifests and the multi-arch index, plus registry provenance/SBOM
-attestations bound to the multi-arch digest.
+https://github.com/aleksclark/stacklane, description, revision/version; no
+license claim until the repository owner grants one) on manifests and the
+multi-arch index, plus registry provenance/SBOM attestations bound to the
+multi-arch digest.
 
 **One-time operator step after the first publication:** GHCR packages default to
 **private**, independent of repo visibility. For anonymous

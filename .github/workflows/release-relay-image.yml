@@ -42,27 +42,48 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Floating tags (latest / major.minor) only for non-prerelease stable semver.
+      # Tag and prerelease are read only via env (never shell-interpolated).
+      - name: Classify release
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          stable_semver=false
+          if [ "${RELEASE_PRERELEASE}" = "false" ] && \
+             printf '%s' "${RELEASE_TAG}" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+            stable_semver=true
+          fi
+          {
+            echo "stable_semver=${stable_semver}"
+            echo "tag=${RELEASE_TAG}"
+            echo "prerelease=${RELEASE_PRERELEASE}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Classify: tag=${RELEASE_TAG} prerelease=${RELEASE_PRERELEASE} stable_semver=${stable_semver}"
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Stable v1.2.3 → tags: v1.2.3, 1.2.3, 1.2, latest
-          # Prerelease v1.2.3-rc.1 → tags: v1.2.3-rc.1, 1.2.3-rc.1 (no 1.2, no latest)
+          # Disable auto-latest; emit latest only when Classify release says stable_semver.
+          # Stable v1.2.3 (prerelease=false) → v1.2.3, 1.2.3, 1.2, latest
+          # Prerelease flag or pre-release/nonsemver tag → exact + full version only (no 1.2/latest)
           flavor: |
-            latest=auto
+            latest=false
           tags: |
             type=ref,event=tag
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ github.event.release.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.release.outputs.stable_semver == 'true' }}
+            type=raw,value=latest,enable=${{ steps.release.outputs.stable_semver == 'true' }}
           labels: |
             org.opencontainers.image.title=stacklane-relay
             org.opencontainers.image.description=Unprivileged multi-arch L4 TCP/UDP relay for Stacklane Compose networks
             org.opencontainers.image.source=https://github.com/aleksclark/stacklane
             org.opencontainers.image.url=https://github.com/aleksclark/stacklane
             org.opencontainers.image.documentation=https://github.com/aleksclark/stacklane#stacklane-relay-containerized-l4-tcpudp
-            org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=aleksclark
           annotations: |
             org.opencontainers.image.title=stacklane-relay
@@ -70,7 +91,6 @@ jobs:
             org.opencontainers.image.source=https://github.com/aleksclark/stacklane
             org.opencontainers.image.url=https://github.com/aleksclark/stacklane
             org.opencontainers.image.documentation=https://github.com/aleksclark/stacklane#stacklane-relay-containerized-l4-tcpudp
-            org.opencontainers.image.licenses=MIT
             org.opencontainers.image.vendor=aleksclark
 
       - name: Build and push multi-arch image
