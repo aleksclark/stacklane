@@ -3,17 +3,17 @@
 Stacklane gives parallel Docker Compose stacks (and Git worktrees) **stable hierarchical local hostnames** and **conflict-free standard ports** by combining:
 
 1. **Per-stack loopback VIPs** from a private pool (default `127.77.0.0/16`)
-2. **Authoritative DNS** for `*.stacklane.test` (default listen `127.0.0.1:5353`)
+2. **Authoritative DNS** for `*.test` (default listen `127.0.0.1:15353`)
 3. **Local TCP proxy** from `VIP:publicPort` → Docker’s ephemeral `127.0.0.1:hostPort`
 
 You publish containers only on loopback with Compose’s ephemeral form `127.0.0.1::<port>`. Stacklane discovers labeled containers, allocates a durable VIP per stack, answers DNS, and proxies so two projects can both expose “port 8080” without colliding.
 
-Example addresses:
+Example addresses (default base `test`):
 
 ```text
-app.alpha.curri.stacklane.test:8080
-app.beta.curri.stacklane.test:8080
-postgres.feature-a.curri.stacklane.test:5432
+app.alpha.curri.test:8080
+app.beta.curri.test:8080
+postgres.feature-a.curri.test:5432
 ```
 
 ## Architecture
@@ -21,7 +21,7 @@ postgres.feature-a.curri.stacklane.test:5432
 ```mermaid
 flowchart LR
   Client[Client / browser / CLI]
-  DNS[Stacklane DNS<br/>127.0.0.1:5353]
+  DNS[Stacklane DNS<br/>127.0.0.1:15353]
   VIP[Loopback VIP<br/>e.g. 127.77.0.N]
   Proxy[TCP proxy<br/>VIP:8080]
   HostPort[Docker publish<br/>127.0.0.1:ephemeral]
@@ -43,7 +43,7 @@ Compose labels ──► Docker Engine ──► stacklane serve (reconcile loop
                     ┌────────────────────┼────────────────────┐
                     ▼                    ▼                    ▼
               VIP lease store      DNS controller      TCP proxy mgr
-              (state.json)         (stacklane.test)    (VIP → 127.0.0.1:hostPort)
+              (state.json)         (*.test)            (VIP → 127.0.0.1:hostPort)
 ```
 
 ## Quick start
@@ -52,7 +52,7 @@ Compose labels ──► Docker Engine ──► stacklane serve (reconcile loop
 # build
 make build
 
-# run daemon (unprivileged DNS on 5353 by default)
+# run daemon (unprivileged DNS on 15353 by default)
 ./bin/stacklane serve --state-dir ~/.stacklane
 
 # in other terminals / worktrees
@@ -60,8 +60,8 @@ docker compose -p alpha -f testdata/compose/stack-a/docker-compose.yml up -d
 docker compose -p beta  -f testdata/compose/stack-b/docker-compose.yml up -d
 
 ./bin/stacklane status -o json
-./bin/stacklane resolve app.alpha.curri.stacklane.test
-curl "http://$(./bin/stacklane resolve app.alpha.curri.stacklane.test | awk '{print $3}'):8080/"
+./bin/stacklane resolve app.alpha.curri.test
+curl "http://$(./bin/stacklane resolve app.alpha.curri.test | awk '{print $3}'):8080/"
 ```
 
 Point tools at the daemon DNS (or use `resolve` + VIP directly). **Host resolver installer is NOT implemented in MVP** — see below.
@@ -125,8 +125,8 @@ Useful serve flags / env:
 | Flag | Env | Default |
 |------|-----|---------|
 | `--state-dir` | `STACKLANE_STATE_DIR` | `~/.stacklane` |
-| `--dns-listen` | `STACKLANE_DNS_LISTEN` | `127.0.0.1:5353` |
-| `--dns-base-domain` | `STACKLANE_DNS_BASE_DOMAIN` | `stacklane.test` |
+| `--dns-listen` | `STACKLANE_DNS_LISTEN` | `127.0.0.1:15353` |
+| `--dns-base-domain` | `STACKLANE_DNS_BASE_DOMAIN` | `test` |
 | `--vip-pool` | `STACKLANE_VIP_POOL` | `127.77.0.0/16` |
 | `--docker-host` | `DOCKER_HOST` | SDK default |
 | `--config` | `STACKLANE_CONFIG` | optional JSON file |
@@ -146,7 +146,7 @@ Hierarchy is left-to-right most-specific → least-specific:
 | `stacklane.endpoint` | Compose service / logical endpoint | `postgres` |
 | `stacklane.instance` | Worktree / clone / env slug | `aleks-stacklane-test` |
 | `stacklane.project` | Stable product / org slug | `curri` |
-| base domain | DNS zone (`--dns-base-domain`) | `test` or `stacklane.test` |
+| base domain | DNS zone (`--dns-base-domain`) | `test` (default); override e.g. `stacklane.test` |
 
 With instance label set:
 
@@ -162,17 +162,18 @@ Without instance:
 <project>.<base>
 ```
 
-Examples (base `stacklane.test`):
+Examples (default base `test`):
+
+```text
+app.alpha.curri.test
+postgres.feature-a.curri.test
+postgres.aleks-stacklane-test.curri.test
+```
+
+With an explicit longer base (`--dns-base-domain stacklane.test`):
 
 ```text
 app.alpha.curri.stacklane.test
-postgres.feature-a.curri.stacklane.test
-```
-
-With base `test` and a worktree instance:
-
-```text
-postgres.aleks-stacklane-test.curri.test
 ```
 
 Stack identity (VIP lease key) is `project` or `project/instance`.
@@ -192,7 +193,7 @@ Stack identity (VIP lease key) is `project` or `project/instance`.
 
 On Linux, the entire `127.0.0.0/8` range is typically local loopback. Binding listeners on `127.77.x.x` generally works **without** adding extra addresses. If bind fails, check policy routing, rootless networking, or SELinux/AppArmor.
 
-Default DNS listen `127.0.0.1:5353` avoids privileged port 53.
+Default DNS listen `127.0.0.1:15353` avoids privileged port 53 and the common mDNS collision on UDP 5353.
 
 ## macOS notes
 
@@ -211,12 +212,12 @@ sudo ifconfig lo0 alias 127.77.0.1 netmask 255.255.0.0
 
 | Platform | What gets installed |
 |----------|---------------------|
-| Linux | `systemd --user` unit `stacklane.service`; systemd-resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` with `Domains=~stacklane.test` → `127.0.0.1:5353` |
-| macOS | `/etc/resolver/stacklane.test` (`nameserver` + `port`); no launchd unit (start `stacklane serve` yourself) |
+| Linux | `systemd --user` unit `stacklane.service`; systemd-resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` with `Domains=~test` → `127.0.0.1:15353` |
+| macOS | `/etc/resolver/test` (`nameserver` + `port`); no launchd unit (start `stacklane serve` yourself) |
 
 Skip pieces with `--binary-only`, `--no-systemd`, or `--no-dns`. DNS config requires sudo (or root) except under `--destdir` staging. Non-loopback `--dns-listen` hosts are rejected for host DNS install (fail-closed).
 
-Manual alternatives without the installer: `dig @127.0.0.1 -p 5353 …` or `stacklane resolve <name>`.
+Manual alternatives without the installer: `dig @127.0.0.1 -p 15353 …` or `stacklane resolve <name>`.
 
 ## Security
 

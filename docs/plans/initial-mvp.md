@@ -5,9 +5,9 @@
 > **Plan-only commit target:** this file alone on `feat/initial-mvp`.
 > **Later run report (do not write in this PR):** `docs/reviews/initial-implementation-run.md`
 
-**Goal:** Ship a working local daemon that gives each Docker Compose project a stable loopback VIP, authoritative `*.stacklane.test` DNS, and TCP proxies from standard ports on that VIP to Docker-assigned ephemeral loopback host ports — so multiple Compose worktrees can expose the same service ports without host-port conflicts.
+**Goal:** Ship a working local daemon that gives each Docker Compose project a stable loopback VIP, authoritative `*.test` DNS, and TCP proxies from standard ports on that VIP to Docker-assigned ephemeral loopback host ports — so multiple Compose worktrees can expose the same service ports without host-port conflicts.
 
-**Architecture:** Event-driven reconciler watches Docker Engine lifecycle/health, derives one endpoint per labeled container from Compose + Stacklane labels and inspected `127.0.0.1` host bindings, allocates a durable per-stack VIP from a configurable loopback pool, publishes A records under `stacklane.test`, and runs TCP listeners on `VIP:publicPort` that proxy only to inspected loopback targets.
+**Architecture:** Event-driven reconciler watches Docker Engine lifecycle/health, derives one endpoint per labeled container from Compose + Stacklane labels and inspected `127.0.0.1` host bindings, allocates a durable per-stack VIP from a configurable loopback pool, publishes A records under `test`, and runs TCP listeners on `VIP:publicPort` that proxy only to inspected loopback targets.
 
 **Tech stack:** Go 1.22+ module `github.com/aleksclark/stacklane`; stdlib-first; Docker Engine SDK; optional single DNS library only if stdlib is insufficient; atomic JSON state store (SQLite allowed only if JSON proves inadequate — default JSON); Makefile + GitHub Actions CI.
 
@@ -81,7 +81,7 @@ Everything in this plan is greenfield implementation on top of the stub README/g
    - Inspect actual Docker-assigned loopback host ports; labels **must not** allow arbitrary host destinations.
    - One-endpoint-per-container MVP with clear validation and deterministic behavior.
 4. Stable VIP allocation persisted across daemon restarts (atomic JSON by default). Crash-safe enough for MVP; mode-safe; deterministic; tested for corruption/error behavior.
-5. Authoritative DNS for `stacklane.test` with exact base and endpoint A records; configurable listen address/port for unprivileged testing. **Do not** modify host resolver or install system service in this PR.
+5. Authoritative DNS for `test` with exact base and endpoint A records; configurable listen address/port for unprivileged testing. **Do not** modify host resolver or install system service in this PR.
 6. TCP proxy on stack VIP + declared public standard port → only Docker-inspected `127.0.0.1` ephemeral host bindings. Lifecycle replacement, cancellation, bounded timeouts, half-close where practical, cleanup. HTTP as ordinary TCP OK; no hostname-specific HTTP fanout.
 7. Reconciliation removes stale DNS/listeners when containers/stacks disappear; preserve stable VIPs with explicit retained lease policy.
 8. Security defaults (see §14).
@@ -365,7 +365,7 @@ Rejected (ignore container, warn): empty, `yes`, `TRUE`, `True`, `on`, `enabled`
 
 Config:
 
-- `dns.base_domain` default `stacklane.test`
+- `dns.base_domain` default `test`
 - `dns.default_instance` default empty string; if set (e.g. `curri`), used when `stacklane.instance` absent
 
 FQDN construction:
@@ -519,9 +519,9 @@ If stack never had `last_active_at` (should not happen), treat `created_at` as a
 
 ### 8.1 Server role
 
-- Authoritative only for `dns.base_domain` (default `stacklane.test`) and names beneath it.
+- Authoritative only for `dns.base_domain` (default `test`) and names beneath it.
 - Does **not** recurse or forward.
-- Configurable `dns.listen` default `127.0.0.1:5353` (unprivileged testing). Production doc note: `:53` requires cap/root — **not auto-configured**.
+- Configurable `dns.listen` default `127.0.0.1:15353` (unprivileged testing). Production doc note: `:53` requires cap/root — **not auto-configured**.
 
 ### 8.2 Records published
 
@@ -537,7 +537,7 @@ Also static zone apex records:
 | Name | Type | RDATA |
 |------|------|-------|
 | `stacklane.test` (base) | SOA | mname `ns.stacklane.test`, rname `hostmaster.stacklane.test`, serial from state generation counter, refresh 3600, retry 600, expire 86400, minimum 5 |
-| `stacklane.test` | NS | `ns.stacklane.test` |
+| `test` | NS | `ns.stacklane.test` |
 | `ns.stacklane.test` | A | DNS listen IP if in loopback; else `127.0.0.1` |
 
 MVP may serve SOA/NS minimally to be a polite auth server; tests must cover A behavior primarily.
@@ -759,8 +759,8 @@ stacklane help
 | `--docker-host` | `DOCKER_HOST` | SDK default |
 | `--vip-pool` | `STACKLANE_VIP_POOL` | `127.77.0.0/16` |
 | `--vip-lease-grace` | `STACKLANE_VIP_LEASE_GRACE` | `24h` |
-| `--dns-listen` | `STACKLANE_DNS_LISTEN` | `127.0.0.1:5353` |
-| `--dns-base-domain` | `STACKLANE_DNS_BASE_DOMAIN` | `stacklane.test` |
+| `--dns-listen` | `STACKLANE_DNS_LISTEN` | `127.0.0.1:15353` |
+| `--dns-base-domain` | `STACKLANE_DNS_BASE_DOMAIN` | `test` |
 | `--dns-default-instance` | `STACKLANE_DNS_DEFAULT_INSTANCE` | empty |
 | `--dns-ttl` | `STACKLANE_DNS_TTL` | `5` |
 | `--reconcile-interval` | `STACKLANE_RECONCILE_INTERVAL` | `15s` |
@@ -783,8 +783,8 @@ Example:
 {
   "vip_pool": "127.77.0.0/16",
   "vip_lease_grace": "24h",
-  "dns_listen": "127.0.0.1:5353",
-  "dns_base_domain": "stacklane.test",
+  "dns_listen": "127.0.0.1:15353",
+  "dns_base_domain": "test",
   "dns_default_instance": "curri",
   "reconcile_interval": "15s"
 }
@@ -796,7 +796,7 @@ Human-readable text (stable enough for tests with `-o json`):
 
 ```text
 Daemon: running
-DNS: 127.0.0.1:5353 base=stacklane.test
+DNS: 127.0.0.1:15353 base=test
 VIP pool: 127.77.0.0/16 (12 leased)
 
 STACK feature-a/curri  vip=127.77.0.1  endpoints=1  lease=active
@@ -808,8 +808,8 @@ JSON schema (`-o json`):
 ```json
 {
   "daemon": "running",
-  "dns_listen": "127.0.0.1:5353",
-  "base_domain": "stacklane.test",
+  "dns_listen": "127.0.0.1:15353",
+  "base_domain": "test",
   "stacks": [
     {
       "key": "feature-a/curri",
@@ -1338,7 +1338,7 @@ README must include:
 | CLI parser | stdlib flags + subcommands |
 | DNS library | miekg/dns |
 | Admin API | HTTP over Unix socket only |
-| Default DNS port | 5353 (unprivileged) |
+| Default DNS port | 15353 (unprivileged; avoids mDNS 5353) |
 | Instance segment | Optional label; config default empty |
 | Unhealthy containers | Still published in MVP |
 | auto_alias VIP | Off by default |
@@ -1390,8 +1390,8 @@ persist: ~/.stacklane/state.json atomic rename mode 0600
 ### DNS
 
 ```text
-base: stacklane.test
-listen: 127.0.0.1:5353 (configurable)
+base: test
+listen: 127.0.0.1:15353 (configurable)
 A(stack) + A(endpoint) -> stack VIP
 unknown in-zone: NXDOMAIN
 out-of-zone: REFUSED

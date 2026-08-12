@@ -1,6 +1,6 @@
 # AGENTS.md — Stacklane
 
-Local developer daemon: per-stack loopback VIPs + authoritative `*.stacklane.test` DNS + TCP proxy so parallel Docker Compose stacks can share standard ports without host-port conflicts.
+Local developer daemon: per-stack loopback VIPs + authoritative `*.test` DNS + TCP proxy so parallel Docker Compose stacks can share standard ports without host-port conflicts.
 
 Module: `github.com/aleksclark/stacklane` · Go `1.24.3` · default branch `master`
 
@@ -20,7 +20,7 @@ make uninstall  # reverse install artifacts (keeps ~/.stacklane)
 
 Local install: `scripts/install.sh`
 
-- Default (Linux): binary → `PREFIX/bin`, user unit `~/.config/systemd/user/stacklane.service`, resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` (`Domains=~stacklane.test` → `127.0.0.1:5353`).
+- Default (Linux): binary → `PREFIX/bin`, user unit `~/.config/systemd/user/stacklane.service`, resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` (`Domains=~test` → `127.0.0.1:15353`).
 - macOS: binary + `/etc/resolver/<base>`; no launchd.
 - Flags: `--binary-only`, `--no-systemd`, `--no-dns`, `--no-start`, `--destdir`, `--uninstall`.
 - Host DNS install refuses non-loopback `--dns-listen` hosts. Does not claim port 53.
@@ -108,10 +108,10 @@ vip.Allocator      // allocate/release against Snapshot
 - **Labels required:** `stacklane.enable`, `stacklane.project`, `stacklane.endpoint`, `stacklane.port`, plus Compose’s `com.docker.compose.project` / `service`. Optional: `instance`, `target_port`, `protocol` (TCP only).
 - **One endpoint per container**; multi-replica conflicts → **smallest container ID wins**.
 - **Stack key / VIP lease:** `project` or `project/instance` (`domain.MakeStackKey`). Prefer `project=org`, `instance=worktree`.
-- **FQDNs:** `<endpoint>.<instance>.<project>.<base>` (instance optional); stack apex omits endpoint. `project`=org/product, `instance`=worktree. Base default `stacklane.test` (never `.local`).
+- **FQDNs:** `<endpoint>.<instance>.<project>.<base>` (instance optional); stack apex omits endpoint. `project`=org/product, `instance`=worktree. Base default `test` (never `.local`).
 - **VIP pool:** IPv4 loopback only, prefix **/16–/30**, within `127.0.0.0/8`, default `127.77.0.0/16`. Allocator skips unusable `.0`/`.255` last octets.
 - **Lease grace:** inactive stacks keep VIP for `vip_lease_grace` (default 24h) after last activity; DNS/proxy only while endpoints exist.
-- **DNS listen:** loopback-only by default; non-loopback needs explicit `--dns-allow-non-loopback`.
+- **DNS listen:** default `127.0.0.1:15353` (avoids mDNS on 5353); loopback-only by default; non-loopback needs explicit `--dns-allow-non-loopback`.
 - **Proxy:** backends must be `127.0.0.1`; bind VIP must be loopback and in pool (`IsAllowedVIP` / `VIPPool` on manager).
 - **DNS records:** non-loopback A VIPs rejected by `SetRecords` (prior set unchanged).
 - **`--vip-auto-alias`:** not implemented; enabling it **fails validation** (no silent no-op).
@@ -134,7 +134,7 @@ JSON config uses snake_case keys and **duration strings** (`"15s"`, `"24h"`). Se
 
 ## Platform notes
 
-- **Linux:** binding `127.77.x.x` usually works without lo aliases; DNS default `127.0.0.1:5353` (unprivileged).
+- **Linux:** binding `127.77.x.x` usually works without lo aliases; DNS default `127.0.0.1:15353` (unprivileged; avoids mDNS on 5353).
 - **macOS:** may need manual `lo0` aliases for VIP pool; auto-alias not implemented.
 - **Windows:** unsupported for MVP.
 - State temp writes use `O_NOFOLLOW` on Linux where applicable.

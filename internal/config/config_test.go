@@ -27,10 +27,10 @@ func TestDefaults(t *testing.T) {
 	if c.VIPLeaseGrace != 24*time.Hour {
 		t.Errorf("VIPLeaseGrace = %v", c.VIPLeaseGrace)
 	}
-	if c.DNSListen != "127.0.0.1:5353" {
+	if c.DNSListen != "127.0.0.1:15353" {
 		t.Errorf("DNSListen = %q", c.DNSListen)
 	}
-	if c.DNSBaseDomain != "stacklane.test" {
+	if c.DNSBaseDomain != "test" {
 		t.Errorf("DNSBaseDomain = %q", c.DNSBaseDomain)
 	}
 	if c.DNSDefaultInstance != "" {

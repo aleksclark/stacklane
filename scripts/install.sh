@@ -3,7 +3,7 @@
 #
 # Always builds/installs the binary. Optionally installs:
 #   - systemd --user unit (Linux) to run `stacklane serve`
-#   - host split-DNS so *.stacklane.test resolves via 127.0.0.1:5353
+#   - host split-DNS so *.test resolves via 127.0.0.1:15353
 #     (systemd-resolved drop-in on Linux; /etc/resolver on macOS)
 #
 # Does NOT claim port 53, edit global resolv.conf, or install launchd (macOS
@@ -19,8 +19,8 @@ set -euo pipefail
 PREFIX="${PREFIX:-${HOME}/.local}"
 DESTDIR="${DESTDIR:-}"
 STATE_DIR="${STACKLANE_STATE_DIR:-${HOME}/.stacklane}"
-DNS_LISTEN="${STACKLANE_DNS_LISTEN:-127.0.0.1:5353}"
-DNS_BASE_DOMAIN="${STACKLANE_DNS_BASE_DOMAIN:-stacklane.test}"
+DNS_LISTEN="${STACKLANE_DNS_LISTEN:-127.0.0.1:15353}"
+DNS_BASE_DOMAIN="${STACKLANE_DNS_BASE_DOMAIN:-test}"
 UNIT_NAME="stacklane.service"
 
 UNINSTALL=0
@@ -37,15 +37,15 @@ usage() {
 Usage: install.sh [options]
 
   Install stacklane from this repository: binary, optional systemd user unit,
-  and optional host split-DNS for *.stacklane.test.
+  and optional host split-DNS for *.test.
 
 Options:
   --prefix DIR       Install prefix (default: ~/.local, or $PREFIX)
   --destdir DIR      Staging root prepended to install paths (no enable/start)
   --state-dir DIR    Daemon state dir (default: ~/.stacklane)
   --dns-listen ADDR  DNS listen addr written into unit/DNS config
-                     (default: 127.0.0.1:5353)
-  --dns-domain NAME  Base domain (default: stacklane.test)
+                     (default: 127.0.0.1:15353)
+  --dns-domain NAME  Base domain (default: test)
   --binary-only      Install binary only (no systemd, no host DNS)
   --no-systemd       Skip systemd user unit
   --no-dns           Skip host DNS/resolver configuration
