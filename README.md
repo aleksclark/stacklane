@@ -212,10 +212,12 @@ sudo ifconfig lo0 alias 127.77.0.1 netmask 255.255.0.0
 
 | Platform | What gets installed |
 |----------|---------------------|
-| Linux | `systemd --user` unit `stacklane.service`; systemd-resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` with `Domains=~test` → `127.0.0.1:15353` |
+| Linux | `systemd --user` unit `stacklane.service`; dummy iface `stacklane0` via systemd-networkd (`10-stacklane0.{netdev,network}`: `DNS=127.0.0.1:15353`, `Domains=~test`, `DNSDefaultRoute=no`); empty `/etc/systemd/resolved.conf.d/50-stacklane.conf` (no Global `Domains=` — avoids public NXDOMAIN for `.test`) |
 | macOS | `/etc/resolver/test` (`nameserver` + `port`); no launchd unit (start `stacklane serve` yourself) |
 
 Skip pieces with `--binary-only`, `--no-systemd`, or `--no-dns`. DNS config requires sudo (or root) except under `--destdir` staging. Non-loopback `--dns-listen` hosts are rejected for host DNS install (fail-closed).
+
+**Linux split-DNS note:** putting `DNS=127.0.0.1:15353` and `Domains=~test` on Global next to an uplink like `8.8.8.8` is broken — resolved may query Google for `*.test`, cache NXDOMAIN, and break NSS even while `dig @127.0.0.1 -p 15353` works. The installer attaches the route domain to a dedicated dummy interface instead.
 
 Manual alternatives without the installer: `dig @127.0.0.1 -p 15353 …` or `stacklane resolve <name>`.
 

@@ -20,11 +20,11 @@ make uninstall  # reverse install artifacts (keeps ~/.stacklane)
 
 Local install: `scripts/install.sh`
 
-- Default (Linux): binary → `PREFIX/bin`, user unit `~/.config/systemd/user/stacklane.service`, resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` (`Domains=~test` → `127.0.0.1:15353`).
+- Default (Linux): binary → `PREFIX/bin`, user unit `~/.config/systemd/user/stacklane.service`, host split-DNS via dummy `stacklane0` (`/etc/systemd/network/10-stacklane0.{netdev,network}`: `DNS=127.0.0.1:15353`, `Domains=~test`, `DNSDefaultRoute=no`) plus empty resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` (never put `Domains=~test` on Global next to public uplink DNS — NXDOMAIN poison).
 - macOS: binary + `/etc/resolver/<base>`; no launchd.
 - Flags: `--binary-only`, `--no-systemd`, `--no-dns`, `--no-start`, `--destdir`, `--uninstall`.
 - Host DNS install refuses non-loopback `--dns-listen` hosts. Does not claim port 53.
-- `DESTDIR` staging never enable/starts units or restarts resolved.
+- `DESTDIR` staging never enable/starts units or restarts networkd/resolved.
 
 - `make ci` is the default quality gate; no Docker required.
 - Real Docker E2E is **build-tagged** (`//go:build e2e`) and gated on `E2E=1`. Plain `go test ./...` skips it. gopls will not see that file unless `-tags=e2e` is set.
