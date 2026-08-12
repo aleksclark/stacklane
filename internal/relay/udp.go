@@ -29,10 +29,13 @@ func (r *Relay) runUDP(ctx context.Context) error {
 		_ = ln.Close()
 	}()
 
-	targetUDP, err := net.ResolveUDPAddr("udp", r.cfg.Target)
-	if err != nil {
-		_ = ln.Close()
-		return fmt.Errorf("resolve target %s: %w", r.cfg.Target, err)
+	resolve := r.resolveUDPAddr
+	if resolve == nil {
+		resolve = net.ResolveUDPAddr
+	}
+	dial := r.dialUDP
+	if dial == nil {
+		dial = net.DialUDP
 	}
 
 	var (
@@ -131,15 +134,53 @@ func (r *Relay) runUDP(ctx context.Context) error {
 
 		mu.Lock()
 		s, ok := sessions[key]
-		if !ok {
-			if len(sessions) >= r.cfg.MaxSessions {
-				mu.Unlock()
-				// Drop when at capacity — fail closed on resource bounds.
+		needNew := !ok
+		atCap := !ok && len(sessions) >= r.cfg.MaxSessions
+		if ok {
+			s.last = time.Now()
+		}
+		mu.Unlock()
+
+		if atCap {
+			// Drop when at capacity — fail closed on resource bounds.
+			continue
+		}
+
+		if needNew {
+			// Resolve + dial outside the session map mutex so DNS/dial latency
+			// cannot stall other clients. Re-check under lock before insert.
+			targetUDP, err := resolve("udp", r.cfg.Target)
+			if err != nil {
 				continue
 			}
-			upConn, err := net.DialUDP("udp", nil, targetUDP)
+			upConn, err := dial("udp", nil, targetUDP)
 			if err != nil {
+				continue
+			}
+
+			mu.Lock()
+			if cur, exists := sessions[key]; exists {
+				// Another packet won the race; reuse that session.
+				_ = upConn.Close()
+				s = cur
+				s.last = time.Now()
+				up := s.up
 				mu.Unlock()
+				if _, err := up.Write(payload); err != nil {
+					mu.Lock()
+					if c2, ok := sessions[key]; ok && c2.up == up {
+						c2.cancel()
+						_ = c2.up.Close()
+						delete(sessions, key)
+						setCount(len(sessions))
+					}
+					mu.Unlock()
+				}
+				continue
+			}
+			if len(sessions) >= r.cfg.MaxSessions {
+				mu.Unlock()
+				_ = upConn.Close()
 				continue
 			}
 			sctx, scancel := context.WithCancel(ctx)
@@ -187,11 +228,23 @@ func (r *Relay) runUDP(ctx context.Context) error {
 					}
 				}
 			}(s, clientAddr)
-		}
-		s.last = time.Now()
-		up := s.up
-		mu.Unlock()
+			up := s.up
+			mu.Unlock()
 
+			if _, err := up.Write(payload); err != nil {
+				mu.Lock()
+				if cur, ok := sessions[key]; ok && cur.up == up {
+					cur.cancel()
+					_ = cur.up.Close()
+					delete(sessions, key)
+					setCount(len(sessions))
+				}
+				mu.Unlock()
+			}
+			continue
+		}
+
+		up := s.up
 		if _, err := up.Write(payload); err != nil {
 			mu.Lock()
 			if cur, ok := sessions[key]; ok && cur.up == up {

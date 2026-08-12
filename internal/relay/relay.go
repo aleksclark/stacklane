@@ -94,6 +94,11 @@ type Relay struct {
 	conns       atomic.Int64
 	udpSessions atomic.Int64
 	active      sync.WaitGroup
+
+	// Optional UDP upstream seams (tests). Nil uses net package defaults.
+	// Must be set before Run; not mutated afterward.
+	resolveUDPAddr func(network, address string) (*net.UDPAddr, error)
+	dialUDP        func(network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, error)
 }
 
 // New constructs a Relay after validating config.

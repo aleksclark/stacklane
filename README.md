@@ -321,15 +321,20 @@ services:
       stacklane.target_port: "3000"
 ```
 
-UDP example (host mapping only — no Stacklane VIP):
+UDP example (host mapping only — no Stacklane VIP). Listen on an unprivileged
+port inside the scratch non-root image; map host UDP to that port. Target stays
+on the Compose service port (e.g. `coredns:53`):
 
 ```yaml
   dns-relay:
     image: stacklane-relay:local
     user: "65532:65532"
-    command: ["--protocol=udp", "--listen=:53", "--target=coredns:53"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command: ["--protocol=udp", "--listen=:19053", "--target=coredns:53"]
     ports:
-      - "127.0.0.1::53/udp"
+      - "127.0.0.1::19053/udp"
 ```
 
 ## Development

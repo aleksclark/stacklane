@@ -166,13 +166,30 @@ func TestUDPGracefulShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	dst, _ := net.ResolveUDPAddr("udp", addr)
-	_, _ = c.WriteTo([]byte("x"), dst)
+	dst, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.WriteTo([]byte("x"), dst); err != nil {
+		t.Fatal(err)
+	}
+	// Require a live round-trip so we know a session was established (not just a write).
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 8)
+	n, _, err := c.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("expected echo before shutdown (session never established): %v", err)
+	}
+	if n != 1 || buf[0] != 'x' {
+		t.Fatalf("echo mismatch: %q", buf[:n])
+	}
 
-	// Wait until session exists.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) && r.UDPSessionCount() == 0 {
 		time.Sleep(5 * time.Millisecond)
+	}
+	if r.UDPSessionCount() == 0 {
+		t.Fatal("expected live UDP session before cancel")
 	}
 
 	cancel()
