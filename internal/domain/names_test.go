@@ -9,23 +9,24 @@ import (
 
 func TestMakeStackKey_WithInstance(t *testing.T) {
 	t.Parallel()
-	got := domain.MakeStackKey("feature-a", "curri")
-	if got != domain.StackKey("feature-a/curri") {
-		t.Fatalf("MakeStackKey = %q, want %q", got, "feature-a/curri")
+	got := domain.MakeStackKey("curri", "feature-a")
+	if got != domain.StackKey("curri/feature-a") {
+		t.Fatalf("MakeStackKey = %q, want %q", got, "curri/feature-a")
 	}
 }
 
 func TestMakeStackKey_WithoutInstance(t *testing.T) {
 	t.Parallel()
-	got := domain.MakeStackKey("feature-a", "")
-	if got != domain.StackKey("feature-a") {
-		t.Fatalf("MakeStackKey = %q, want %q", got, "feature-a")
+	got := domain.MakeStackKey("curri", "")
+	if got != domain.StackKey("curri") {
+		t.Fatalf("MakeStackKey = %q, want %q", got, "curri")
 	}
 }
 
 func TestBuildFQDNs_WithInstance(t *testing.T) {
 	t.Parallel()
-	endpointFQDN, stackFQDN := domain.BuildFQDNs("postgres", "feature-a", "curri", "stacklane.test")
+	// hierarchy: endpoint.instance.project.base
+	endpointFQDN, stackFQDN := domain.BuildFQDNs("postgres", "curri", "feature-a", "stacklane.test")
 	if endpointFQDN != "postgres.feature-a.curri.stacklane.test" {
 		t.Fatalf("endpointFQDN = %q, want %q", endpointFQDN, "postgres.feature-a.curri.stacklane.test")
 	}
@@ -36,12 +37,23 @@ func TestBuildFQDNs_WithInstance(t *testing.T) {
 
 func TestBuildFQDNs_WithoutInstance(t *testing.T) {
 	t.Parallel()
-	endpointFQDN, stackFQDN := domain.BuildFQDNs("postgres", "feature-a", "", "stacklane.test")
-	if endpointFQDN != "postgres.feature-a.stacklane.test" {
-		t.Fatalf("endpointFQDN = %q, want %q", endpointFQDN, "postgres.feature-a.stacklane.test")
+	endpointFQDN, stackFQDN := domain.BuildFQDNs("postgres", "curri", "", "stacklane.test")
+	if endpointFQDN != "postgres.curri.stacklane.test" {
+		t.Fatalf("endpointFQDN = %q, want %q", endpointFQDN, "postgres.curri.stacklane.test")
 	}
-	if stackFQDN != "feature-a.stacklane.test" {
-		t.Fatalf("stackFQDN = %q, want %q", stackFQDN, "feature-a.stacklane.test")
+	if stackFQDN != "curri.stacklane.test" {
+		t.Fatalf("stackFQDN = %q, want %q", stackFQDN, "curri.stacklane.test")
+	}
+}
+
+func TestBuildFQDNs_WorktreeHierarchy(t *testing.T) {
+	t.Parallel()
+	endpointFQDN, stackFQDN := domain.BuildFQDNs("postgres", "curri", "aleks-stacklane-test", "test")
+	if endpointFQDN != "postgres.aleks-stacklane-test.curri.test" {
+		t.Fatalf("endpointFQDN = %q, want %q", endpointFQDN, "postgres.aleks-stacklane-test.curri.test")
+	}
+	if stackFQDN != "aleks-stacklane-test.curri.test" {
+		t.Fatalf("stackFQDN = %q, want %q", stackFQDN, "aleks-stacklane-test.curri.test")
 	}
 }
 

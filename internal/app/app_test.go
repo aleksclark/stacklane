@@ -35,7 +35,7 @@ func TestServeStatusJSONAndResolve(t *testing.T) {
 		t.Skip("port busy")
 	}
 	dk.SetContainers([]dockerapi.Container{
-		labeled("svc1", "proj", "curri", "api", "api", publicPort, backend.port),
+		labeled("svc1", "curri", "proj", "api", "api", publicPort, backend.port),
 	})
 
 	cfg := testConfig(dir)
@@ -167,7 +167,7 @@ func TestCLIStatusResolveAgainstServe(t *testing.T) {
 		t.Skip("port busy")
 	}
 	dk.SetContainers([]dockerapi.Container{
-		labeled("cli1", "cliproj", "curri", "web", "web", publicPort, backend.port),
+		labeled("cli1", "curri", "cliproj", "web", "web", publicPort, backend.port),
 	})
 
 	cfg := testConfig(dir)

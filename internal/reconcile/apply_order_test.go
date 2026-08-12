@@ -107,10 +107,10 @@ func sampleDesiredAndSnap(t *testing.T) (domain.DesiredState, state.Snapshot) {
 			},
 		},
 		Endpoints: map[string]domain.Endpoint{
-			"api.proj.inst.stacklane.test": {
+			"api.inst.proj.stacklane.test": {
 				StackKey:   key,
 				Name:       "api",
-				FQDN:       "api.proj.inst.stacklane.test",
+				FQDN:       "api.inst.proj.stacklane.test",
 				Protocol:   domain.ProtocolTCP,
 				VIP:        vip,
 				PublicPort: 8080,

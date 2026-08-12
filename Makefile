@@ -1,4 +1,6 @@
-.PHONY: fmt vet test race build ci e2e
+.PHONY: fmt vet test race build ci e2e install uninstall
+
+PREFIX ?= $(HOME)/.local
 
 fmt:
 	gofmt -w $(shell find cmd internal -name '*.go')
@@ -21,3 +23,9 @@ ci: vet race build
 
 e2e:
 	E2E=1 go test -race -tags=e2e ./internal/app -count=1
+
+install:
+	PREFIX="$(PREFIX)" ./scripts/install.sh
+
+uninstall:
+	PREFIX="$(PREFIX)" ./scripts/install.sh --uninstall

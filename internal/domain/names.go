@@ -4,6 +4,7 @@ import "strconv"
 
 // MakeStackKey builds the durable stack identity from project and optional instance.
 // If instance is empty, the key is just the project slug.
+// Convention: project is the stable product/org slug; instance is the worktree/clone.
 func MakeStackKey(project, instance string) StackKey {
 	if instance == "" {
 		return StackKey(project)
@@ -12,11 +13,22 @@ func MakeStackKey(project, instance string) StackKey {
 }
 
 // BuildFQDNs constructs endpoint and stack FQDNs under baseDomain.
-// When instance is empty, the instance label segment is omitted.
+// Hierarchy (left = most specific):
+//
+//	{endpoint}.{instance}.{project}.{base}   when instance is set
+//	{endpoint}.{project}.{base}              when instance is empty
+//
+// Stack apex omits the endpoint label:
+//
+//	{instance}.{project}.{base}  or  {project}.{base}
+//
+// Example: endpoint=postgres, instance=aleks-stacklane-test, project=curri, base=test
+//
+//	→ postgres.aleks-stacklane-test.curri.test
 func BuildFQDNs(endpoint, project, instance, baseDomain string) (endpointFQDN, stackFQDN string) {
 	if instance != "" {
-		endpointFQDN = endpoint + "." + project + "." + instance + "." + baseDomain
-		stackFQDN = project + "." + instance + "." + baseDomain
+		endpointFQDN = endpoint + "." + instance + "." + project + "." + baseDomain
+		stackFQDN = instance + "." + project + "." + baseDomain
 		return endpointFQDN, stackFQDN
 	}
 	endpointFQDN = endpoint + "." + project + "." + baseDomain

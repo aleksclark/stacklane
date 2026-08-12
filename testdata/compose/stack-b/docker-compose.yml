@@ -4,8 +4,8 @@ services:
     command: ["-text=B", "-listen=:8080"]
     labels:
       stacklane.enable: "true"
-      stacklane.project: "beta"
-      stacklane.instance: "curri"
+      stacklane.project: "curri"
+      stacklane.instance: "beta"
       stacklane.endpoint: "app"
       stacklane.port: "8080"
     ports:

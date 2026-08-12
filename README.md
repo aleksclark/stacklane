@@ -79,15 +79,15 @@ services:
     command: ["-text=A", "-listen=:8080"]
     labels:
       stacklane.enable: "true"
-      stacklane.project: "alpha"
-      stacklane.instance: "curri"
+      stacklane.project: "curri"
+      stacklane.instance: "alpha"
       stacklane.endpoint: "app"
       stacklane.port: "8080"
     ports:
       - "127.0.0.1::8080"
 ```
 
-`stack-b` is the same with `stacklane.project: "beta"` and body `B`.
+`stack-b` is the same with `stacklane.instance: "beta"` and body `B`.
 
 ```bash
 docker compose -p sl_a -f testdata/compose/stack-a/docker-compose.yml up -d
@@ -99,10 +99,10 @@ docker compose -p sl_b -f testdata/compose/stack-b/docker-compose.yml up -d
 | Label | Required | Meaning |
 |-------|----------|---------|
 | `stacklane.enable` | yes | `true` or `1` |
-| `stacklane.project` | yes | project slug |
+| `stacklane.project` | yes | product/org slug (stable across worktrees) |
 | `stacklane.endpoint` | yes | endpoint slug |
 | `stacklane.port` | yes | public port on the VIP |
-| `stacklane.instance` | no | instance slug (e.g. org/user) |
+| `stacklane.instance` | no | worktree/clone slug (most-specific DNS label under project) |
 | `stacklane.target_port` | no | container port if ≠ public port |
 | `stacklane.protocol` | no | only `tcp` in MVP |
 | `com.docker.compose.project` | yes | set by Compose |
@@ -135,11 +135,24 @@ Control plane is HTTP over a Unix socket at `<state-dir>/stacklane.sock` (mode `
 
 ## Naming scheme
 
+Hierarchy is left-to-right most-specific → least-specific:
+
+```text
+{endpoint}.{instance}.{project}.{base}
+```
+
+| Label | Meaning | Example |
+|-------|---------|---------|
+| `stacklane.endpoint` | Compose service / logical endpoint | `postgres` |
+| `stacklane.instance` | Worktree / clone / env slug | `aleks-stacklane-test` |
+| `stacklane.project` | Stable product / org slug | `curri` |
+| base domain | DNS zone (`--dns-base-domain`) | `test` or `stacklane.test` |
+
 With instance label set:
 
 ```text
-<endpoint>.<project>.<instance>.<base>
-<project>.<instance>.<base>          # stack apex A record
+<endpoint>.<instance>.<project>.<base>
+<instance>.<project>.<base>          # stack apex A record
 ```
 
 Without instance:
@@ -149,7 +162,18 @@ Without instance:
 <project>.<base>
 ```
 
-Defaults: base `stacklane.test` → e.g. `app.alpha.curri.stacklane.test`.
+Examples (base `stacklane.test`):
+
+```text
+app.alpha.curri.stacklane.test
+postgres.feature-a.curri.stacklane.test
+```
+
+With base `test` and a worktree instance:
+
+```text
+postgres.aleks-stacklane-test.curri.test
+```
 
 Stack identity (VIP lease key) is `project` or `project/instance`.
 
@@ -159,10 +183,10 @@ Stack identity (VIP lease key) is `project` or `project/instance`.
 - **One Stacklane endpoint per container** — multi-endpoint containers unsupported.
 - **No multi-replica** — Compose `container-number` ignored; conflicts pick smallest container ID.
 - **Loopback publish required** — non-`127.0.0.1` host bindings skipped.
-- **No automatic host OS resolver install** — see section below (**NOT implemented**).
 - **No TLS termination**, auth, or multi-host clustering.
 - **VIP auto-alias** (`--vip-auto-alias`) off by default; Linux usually does not need it.
 - Single daemon per state dir (exclusive lock).
+- Host DNS/systemd setup is optional via `scripts/install.sh` (not claimed on port 53).
 
 ## Linux notes
 
@@ -181,16 +205,18 @@ sudo ifconfig lo0 alias 127.77.0.1 netmask 255.255.0.0
 
 `--vip-auto-alias` is reserved for future automatic alias management; treat macOS alias setup as an operator step in MVP.
 
-## Future host resolver setup — **NOT implemented in MVP**
+## Host DNS and systemd (via install script)
 
-The MVP ships an authoritative DNS server on a configurable address (default `127.0.0.1:5353`) and a `resolve` CLI. It does **not**:
+`scripts/install.sh` can wire local name resolution and a user service. It does **not** claim port 53 or rewrite global `resolv.conf`.
 
-- install or edit `/etc/resolver/stacklane.test`
-- configure systemd-resolved / NetworkManager split DNS
-- claim port 53
-- modify macOS DNS settings
+| Platform | What gets installed |
+|----------|---------------------|
+| Linux | `systemd --user` unit `stacklane.service`; systemd-resolved drop-in `/etc/systemd/resolved.conf.d/50-stacklane.conf` with `Domains=~stacklane.test` → `127.0.0.1:5353` |
+| macOS | `/etc/resolver/stacklane.test` (`nameserver` + `port`); no launchd unit (start `stacklane serve` yourself) |
 
-Operators may manually point dig/tools at `--dns-listen`, or use `stacklane resolve` + VIP URLs, until a future installer exists.
+Skip pieces with `--binary-only`, `--no-systemd`, or `--no-dns`. DNS config requires sudo (or root) except under `--destdir` staging. Non-loopback `--dns-listen` hosts are rejected for host DNS install (fail-closed).
+
+Manual alternatives without the installer: `dig @127.0.0.1 -p 5353 …` or `stacklane resolve <name>`.
 
 ## Security
 
@@ -203,12 +229,39 @@ Additional notes:
 - Do not expose the Docker socket or Stacklane control socket over the network.
 - Labels are untrusted input; invalid values are skipped with warnings.
 
+## Install (local)
+
+From a clone of this repo (requires Go 1.24+):
+
+```bash
+# binary + systemd user unit + host split-DNS (Linux)
+./scripts/install.sh
+# or: make install
+
+stacklane version
+stacklane status -o json          # after unit starts
+# journalctl --user -u stacklane.service -f
+```
+
+Useful variants:
+
+```bash
+./scripts/install.sh --binary-only          # ~/.local/bin only
+./scripts/install.sh --no-dns               # unit, no resolver drop-in
+./scripts/install.sh --no-systemd           # binary + DNS only
+./scripts/install.sh --no-start             # write unit, do not enable
+PREFIX=/usr/local ./scripts/install.sh     # may need write access for prefix
+./scripts/install.sh --uninstall           # binary + unit + DNS (keeps ~/.stacklane)
+```
+
 ## Development
 
 ```bash
 make ci          # vet, race tests, build, gofmt check (no Docker required)
 make e2e         # real Docker compose E2E (E2E=1, needs Docker)
 make build       # bin/stacklane
+make install     # scripts/install.sh (binary + systemd + dns on Linux)
+make uninstall   # reverse install artifacts
 ```
 
 CI: GitHub Actions (`.github/workflows/ci.yml`) runs `make ci` and an optional Docker `make e2e` job. Actions are pinned to full commit SHAs.

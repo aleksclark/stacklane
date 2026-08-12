@@ -50,8 +50,8 @@ func TestTwoStacksSamePublicPortDistinctVIPDNSProxy(t *testing.T) {
 	_ = pubPortA
 	_ = pubPortB
 
-	cA := labeledContainer("aaa111", "stack-a", "feature-a", "curri", "postgres", "db", publicPort, backendA.port)
-	cB := labeledContainer("bbb222", "stack-b", "feature-b", "curri", "postgres", "db", publicPort, backendB.port)
+	cA := labeledContainer("aaa111", "stack-a", "curri", "feature-a", "postgres", "db", publicPort, backendA.port)
+	cB := labeledContainer("bbb222", "stack-b", "curri", "feature-b", "postgres", "db", publicPort, backendB.port)
 	h.docker.SetContainers([]dockerapi.Container{cA, cB})
 
 	h.triggerAndWait(t, 2)
@@ -61,8 +61,8 @@ func TestTwoStacksSamePublicPortDistinctVIPDNSProxy(t *testing.T) {
 		t.Fatalf("endpoints=%d want 2: %+v", len(snap.Endpoints), snap.Endpoints)
 	}
 
-	vipA := mustFindVIP(t, snap, "feature-a/curri")
-	vipB := mustFindVIP(t, snap, "feature-b/curri")
+	vipA := mustFindVIP(t, snap, "curri/feature-a")
+	vipB := mustFindVIP(t, snap, "curri/feature-b")
 	if vipA == vipB {
 		t.Fatalf("expected distinct VIPs, both %s", vipA)
 	}
@@ -97,11 +97,11 @@ func TestContainerStopRemovesDNSProxyKeepsLease(t *testing.T) {
 		t.Skip("port busy")
 	}
 
-	c := labeledContainer("ccc333", "stack-c", "gone", "curri", "api", "api", publicPort, backend.port)
+	c := labeledContainer("ccc333", "stack-c", "curri", "gone", "api", "api", publicPort, backend.port)
 	h.docker.SetContainers([]dockerapi.Container{c})
 	h.triggerAndWait(t, 1)
 
-	vipAddr := mustFindVIP(t, h.engine.Snapshot(), "gone/curri")
+	vipAddr := mustFindVIP(t, h.engine.Snapshot(), "curri/gone")
 	if lookupA(t, h.dnsAddr, "api.gone.curri."+testBaseDomain) != vipAddr {
 		t.Fatal("expected DNS before stop")
 	}
@@ -126,7 +126,7 @@ func TestContainerStopRemovesDNSProxyKeepsLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(st.Leases) != 1 || st.Leases[0].StackKey != "gone/curri" {
+	if len(st.Leases) != 1 || st.Leases[0].StackKey != "curri/gone" {
 		t.Fatalf("lease not retained: %+v", st.Leases)
 	}
 	if st.Leases[0].VIP.String() != vipAddr {
@@ -146,10 +146,10 @@ func TestGraceExpiryAllowsVIPReallocation(t *testing.T) {
 		t.Skip("port busy")
 	}
 
-	c1 := labeledContainer("old001", "s1", "old", "curri", "api", "api", publicPort, backend.port)
+	c1 := labeledContainer("old001", "s1", "curri", "old", "api", "api", publicPort, backend.port)
 	h.docker.SetContainers([]dockerapi.Container{c1})
 	h.triggerAndWait(t, 1)
-	oldVIP := mustFindVIP(t, h.engine.Snapshot(), "old/curri")
+	oldVIP := mustFindVIP(t, h.engine.Snapshot(), "curri/old")
 
 	h.docker.SetContainers(nil)
 	h.triggerAndWait(t, 0)
@@ -163,7 +163,7 @@ func TestGraceExpiryAllowsVIPReallocation(t *testing.T) {
 	// Advance past grace (harness grace is 1s for this test via deps).
 	h.setNow(h.now().Add(2 * time.Second))
 	// New stack should be able to take the first VIP after expiry.
-	c2 := labeledContainer("new002", "s2", "new", "curri", "api", "api", publicPort, backend.port)
+	c2 := labeledContainer("new002", "s2", "curri", "new", "api", "api", publicPort, backend.port)
 	h.docker.SetContainers([]dockerapi.Container{c2})
 	h.triggerAndWait(t, 1)
 
@@ -173,11 +173,11 @@ func TestGraceExpiryAllowsVIPReallocation(t *testing.T) {
 	}
 	// old lease released; new has a VIP (can be same as old first free).
 	for _, l := range st.Leases {
-		if l.StackKey == "old/curri" {
+		if l.StackKey == "curri/old" {
 			t.Fatalf("old lease should be released: %+v", st.Leases)
 		}
 	}
-	newVIP := mustFindVIP(t, h.engine.Snapshot(), "new/curri")
+	newVIP := mustFindVIP(t, h.engine.Snapshot(), "curri/new")
 	// With empty pool of leases, first usable is same as oldVIP.
 	if newVIP != oldVIP {
 		// Still OK if pool order differs after release — just ensure allocation works.
@@ -199,7 +199,7 @@ func TestInvalidLabelsAndNonLoopbackIgnored(t *testing.T) {
 		t.Skip("port busy")
 	}
 
-	good := labeledContainer("good01", "g", "good", "curri", "api", "api", publicPort, backend.port)
+	good := labeledContainer("good01", "g", "curri", "good", "api", "api", publicPort, backend.port)
 	invalid := dockerapi.Container{
 		ID:   "bad01",
 		Name: "bad",
@@ -210,7 +210,7 @@ func TestInvalidLabelsAndNonLoopbackIgnored(t *testing.T) {
 			// missing project/endpoint/port
 		},
 	}
-	nonLoop := labeledContainer("nl01", "nl", "noloop", "curri", "api", "api", publicPort, 9)
+	nonLoop := labeledContainer("nl01", "nl", "curri", "noloop", "api", "api", publicPort, 9)
 	nonLoop.Ports = []dockerapi.PortBinding{{
 		HostIP: "0.0.0.0", HostPort: 9999, ContainerPort: publicPort, Protocol: "tcp",
 	}}
@@ -222,7 +222,7 @@ func TestInvalidLabelsAndNonLoopbackIgnored(t *testing.T) {
 	if len(snap.Endpoints) != 1 {
 		t.Fatalf("want 1 endpoint, got %+v", snap.Endpoints)
 	}
-	if snap.Endpoints[0].StackKey != "good/curri" {
+	if snap.Endpoints[0].StackKey != "curri/good" {
 		t.Fatalf("unexpected endpoint: %+v", snap.Endpoints[0])
 	}
 }
@@ -237,13 +237,13 @@ func TestRestartLoadsSameVIP(t *testing.T) {
 	if !canBind(t, "127.77.0.1", publicPort) {
 		t.Skip("port busy")
 	}
-	c := labeledContainer("rst001", "r", "restart", "curri", "api", "api", publicPort, backend.port)
+	c := labeledContainer("rst001", "r", "curri", "restart", "api", "api", publicPort, backend.port)
 
 	// Engine 1
 	h1 := newHarnessAt(t, storePath, nil)
 	h1.docker.SetContainers([]dockerapi.Container{c})
 	h1.triggerAndWait(t, 1)
-	vip1 := mustFindVIP(t, h1.engine.Snapshot(), "restart/curri")
+	vip1 := mustFindVIP(t, h1.engine.Snapshot(), "curri/restart")
 	h1.close()
 
 	// Engine 2 loads store
@@ -251,7 +251,7 @@ func TestRestartLoadsSameVIP(t *testing.T) {
 	defer h2.close()
 	h2.docker.SetContainers([]dockerapi.Container{c})
 	h2.triggerAndWait(t, 1)
-	vip2 := mustFindVIP(t, h2.engine.Snapshot(), "restart/curri")
+	vip2 := mustFindVIP(t, h2.engine.Snapshot(), "curri/restart")
 	if vip1 != vip2 {
 		t.Fatalf("VIP changed across restart: %s -> %s", vip1, vip2)
 	}
@@ -271,8 +271,8 @@ func TestConflictSameFQDNSmallerContainerIDWins(t *testing.T) {
 	}
 
 	// Same labels → same FQDN; smaller container ID wins.
-	cWin := labeledContainer("aaa", "w", "conflict", "curri", "api", "api", publicPort, b1.port)
-	cLose := labeledContainer("zzz", "l", "conflict", "curri", "api", "api", publicPort, b2.port)
+	cWin := labeledContainer("aaa", "w", "curri", "conflict", "api", "api", publicPort, b1.port)
+	cLose := labeledContainer("zzz", "l", "curri", "conflict", "api", "api", publicPort, b2.port)
 	h.docker.SetContainers([]dockerapi.Container{cLose, cWin})
 	h.triggerAndWait(t, 1)
 

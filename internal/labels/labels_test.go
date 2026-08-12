@@ -13,8 +13,8 @@ func baseLabels() map[string]string {
 		labels.ComposeProjectKey: "compose-proj",
 		labels.ComposeServiceKey: "db",
 		labels.EnableKey:         "true",
-		labels.ProjectKey:        "feature-a",
-		labels.InstanceKey:       "curri",
+		labels.ProjectKey:        "curri",
+		labels.InstanceKey:       "feature-a",
 		labels.EndpointKey:       "postgres",
 		labels.ProtocolKey:       "tcp",
 		labels.PortKey:           "5432",
@@ -31,10 +31,10 @@ func TestParse_ValidLabels_StackKeyAndFields(t *testing.T) {
 	if !ok {
 		t.Fatal("Parse ok=false, want true")
 	}
-	if meta.StackKey != domain.StackKey("feature-a/curri") {
-		t.Errorf("StackKey = %q, want %q", meta.StackKey, "feature-a/curri")
+	if meta.StackKey != domain.StackKey("curri/feature-a") {
+		t.Errorf("StackKey = %q, want %q", meta.StackKey, "curri/feature-a")
 	}
-	if meta.ProjectSlug != "feature-a" || meta.InstanceSlug != "curri" || meta.EndpointName != "postgres" {
+	if meta.ProjectSlug != "curri" || meta.InstanceSlug != "feature-a" || meta.EndpointName != "postgres" {
 		t.Errorf("slugs = project=%q instance=%q endpoint=%q", meta.ProjectSlug, meta.InstanceSlug, meta.EndpointName)
 	}
 	if meta.Protocol != domain.ProtocolTCP {
@@ -186,15 +186,16 @@ func TestParse_DefaultInstanceApplied(t *testing.T) {
 	t.Parallel()
 	l := baseLabels()
 	delete(l, labels.InstanceKey)
-	meta, ok, err := labels.Parse(l, "curri")
+	// default instance is the worktree/clone slug when the label is omitted
+	meta, ok, err := labels.Parse(l, "feature-a")
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if meta.InstanceSlug != "curri" {
-		t.Fatalf("InstanceSlug = %q, want curri", meta.InstanceSlug)
+	if meta.InstanceSlug != "feature-a" {
+		t.Fatalf("InstanceSlug = %q, want feature-a", meta.InstanceSlug)
 	}
-	if meta.StackKey != domain.StackKey("feature-a/curri") {
-		t.Fatalf("StackKey = %q, want feature-a/curri", meta.StackKey)
+	if meta.StackKey != domain.StackKey("curri/feature-a") {
+		t.Fatalf("StackKey = %q, want curri/feature-a", meta.StackKey)
 	}
 }
 
@@ -209,8 +210,8 @@ func TestParse_NoInstanceNoDefault(t *testing.T) {
 	if meta.InstanceSlug != "" {
 		t.Fatalf("InstanceSlug = %q, want empty", meta.InstanceSlug)
 	}
-	if meta.StackKey != domain.StackKey("feature-a") {
-		t.Fatalf("StackKey = %q, want feature-a", meta.StackKey)
+	if meta.StackKey != domain.StackKey("curri") {
+		t.Fatalf("StackKey = %q, want curri", meta.StackKey)
 	}
 }
 
