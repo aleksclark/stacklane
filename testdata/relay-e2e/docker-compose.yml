@@ -1,0 +1,85 @@
+services:
+  backend-http:
+    build:
+      context: ./backend
+    environment:
+      MODE: http
+    networks: [relaynet]
+
+  backend-https:
+    build:
+      context: ./backend
+    environment:
+      MODE: https
+    networks: [relaynet]
+
+  backend-udp:
+    build:
+      context: ./backend
+    environment:
+      MODE: udp
+    networks: [relaynet]
+
+  relay-http:
+    image: ${RELAY_IMAGE}
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - --protocol=tcp
+      - --listen=:18080
+      - --target=backend-http:8080
+    ports:
+      - "127.0.0.1::18080"
+    depends_on: [backend-http]
+    networks: [relaynet]
+    labels:
+      stacklane.enable: "true"
+      stacklane.project: "relay-demo"
+      stacklane.instance: "e2e"
+      stacklane.endpoint: "http-relay"
+      stacklane.port: "18080"
+      stacklane.target_port: "18080"
+
+  relay-https:
+    image: ${RELAY_IMAGE}
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - --protocol=tcp
+      - --listen=:18443
+      - --target=backend-https:8443
+    ports:
+      - "127.0.0.1::18443"
+    depends_on: [backend-https]
+    networks: [relaynet]
+    labels:
+      stacklane.enable: "true"
+      stacklane.project: "relay-demo"
+      stacklane.instance: "e2e"
+      stacklane.endpoint: "https-relay"
+      stacklane.port: "18443"
+      stacklane.target_port: "18443"
+
+  relay-udp:
+    image: ${RELAY_IMAGE}
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - --protocol=udp
+      - --listen=:19000
+      - --target=backend-udp:9000
+    ports:
+      - "127.0.0.1::19000/udp"
+    depends_on: [backend-udp]
+    networks: [relaynet]
+    # Note: Stacklane VIP UDP is unsupported; UDP reaches the host via Docker's
+    # ephemeral UDP publish only. Labels omitted intentionally for UDP.
+
+networks:
+  relaynet:
