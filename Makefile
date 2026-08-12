@@ -16,13 +16,14 @@ race:
 
 build:
 	go build -o bin/stacklane ./cmd/stacklane
+	go build -o bin/stacklane-relay ./cmd/stacklane-relay
 
 ci: vet race build
 	git diff --check
 	test -z "$$(gofmt -l cmd internal)"
 
 e2e:
-	E2E=1 go test -race -tags=e2e ./internal/app -count=1
+	E2E=1 go test -race -tags=e2e ./internal/app ./internal/relay -count=1
 
 install:
 	PREFIX="$(PREFIX)" ./scripts/install.sh

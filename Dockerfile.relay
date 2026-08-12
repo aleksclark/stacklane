@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.6
+
+# Production image for stacklane-relay: static binary, non-root, scratch.
+# No shell, package manager, CAP_NET_ADMIN, or Docker socket.
+
+FROM golang:1.24.3-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache ca-certificates
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/stacklane-relay ./cmd/stacklane-relay
+COPY internal/relay ./internal/relay
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/stacklane-relay ./cmd/stacklane-relay
+
+FROM scratch
+COPY --from=build /out/stacklane-relay /stacklane-relay
+# Numeric non-root USER (nobody-compatible).
+USER 65532:65532
+ENTRYPOINT ["/stacklane-relay"]

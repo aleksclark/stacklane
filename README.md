@@ -254,12 +254,90 @@ PREFIX=/usr/local ./scripts/install.sh     # may need write access for prefix
 ./scripts/install.sh --uninstall           # binary + unit + DNS (keeps ~/.stacklane)
 ```
 
+## stacklane-relay (containerized L4 TCP/UDP)
+
+`stacklane-relay` is a small **payload-transparent L4 forwarder** intended to run as an
+**unprivileged container** on a Compose network. One process relays **one** endpoint.
+
+```bash
+make build   # produces bin/stacklane and bin/stacklane-relay
+
+stacklane-relay --protocol tcp --listen :18080 --target overmind:3000
+stacklane-relay --protocol udp --listen :19000 --target dns-upstream:53
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--protocol` | `tcp` or `udp` |
+| `--listen` | listen address (e.g. `:18080`) |
+| `--target` | upstream `host:port` on the container network |
+
+**TCP** is opaque bidirectional forwarding (HTTP, WebSocket, TLS/HTTPS, Postgres, NATS, …).
+The relay does **not** terminate TLS.
+
+**UDP** maintains per-client-address sessions to dedicated upstream sockets, with bounded
+session count and idle expiry (multi-client safe — not single-client serialization).
+
+### Limitations
+
+- **Not TPROXY / source-IP preserving.** The backend sees the **relay container IP**.
+- No `CAP_NET_ADMIN`, iptables, host networking, or Docker socket access.
+- **Stacklane VIP UDP remains unsupported.** UDP relay is reached through Docker’s
+  ephemeral host UDP mapping (`127.0.0.1::<port>/udp`). Stable VIP+UDP via the daemon
+  proxy is out of scope.
+- TCP endpoints can still be published with Stacklane labels + VIP proxy as usual.
+
+### Production image
+
+```bash
+docker build -f Dockerfile.relay -t stacklane-relay:local .
+# static binary, USER 65532, scratch runtime, no shell
+```
+
+### Compose example (loopback ephemeral + labels)
+
+```yaml
+services:
+  app:
+    image: your-app
+    # internal only — reached via relay on the compose network
+    expose: ["3000"]
+
+  app-relay:
+    image: stacklane-relay:local
+    user: "65532:65532"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    command: ["--protocol=tcp", "--listen=:3000", "--target=app:3000"]
+    ports:
+      - "127.0.0.1::3000"   # ephemeral host port for Stacklane
+    labels:
+      stacklane.enable: "true"
+      stacklane.project: "curri"
+      stacklane.instance: "alpha"
+      stacklane.endpoint: "app"
+      stacklane.port: "3000"
+      stacklane.target_port: "3000"
+```
+
+UDP example (host mapping only — no Stacklane VIP):
+
+```yaml
+  dns-relay:
+    image: stacklane-relay:local
+    user: "65532:65532"
+    command: ["--protocol=udp", "--listen=:53", "--target=coredns:53"]
+    ports:
+      - "127.0.0.1::53/udp"
+```
+
 ## Development
 
 ```bash
 make ci          # vet, race tests, build, gofmt check (no Docker required)
-make e2e         # real Docker compose E2E (E2E=1, needs Docker)
-make build       # bin/stacklane
+make e2e         # real Docker compose E2E: daemon + relay (E2E=1, needs Docker)
+make build       # bin/stacklane and bin/stacklane-relay
 make install     # scripts/install.sh (binary + systemd + dns on Linux)
 make uninstall   # reverse install artifacts
 ```
