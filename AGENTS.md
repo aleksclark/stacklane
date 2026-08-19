@@ -2,7 +2,7 @@
 
 Local developer daemon: per-stack loopback VIPs + authoritative `*.stacklane.test` DNS + TCP proxy so parallel Docker Compose stacks can share standard ports without host-port conflicts.
 
-Module: `github.com/aleksclark/stacklane` · Go `1.24.3` · default branch `master`
+Module: `github.com/aleksclark/stacklane` · Go `1.26.6` · default branch `master`
 
 ## Commands
 
