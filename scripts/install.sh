@@ -312,7 +312,7 @@ fi
 # --- build + binary ----------------------------------------------------------
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  command -v "$GO_BIN" >/dev/null 2>&1 || die "Go toolchain not found (looked for '$GO_BIN'). Install Go 1.24+ or set GO=."
+  command -v "$GO_BIN" >/dev/null 2>&1 || die "Go toolchain not found (looked for '$GO_BIN'). Install Go 1.26.6+ or set GO=."
   log "building stacklane..."
   (
     cd "$ROOT"

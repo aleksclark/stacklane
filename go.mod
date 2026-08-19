@@ -1,6 +1,6 @@
 module github.com/aleksclark/stacklane
 
-go 1.24.3
+go 1.26.6
 
 require (
 	github.com/miekg/dns v1.1.72

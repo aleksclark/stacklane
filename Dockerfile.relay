@@ -3,7 +3,7 @@
 # Production image for stacklane-relay: static binary, non-root, scratch.
 # No shell, package manager, CAP_NET_ADMIN, or Docker socket.
 
-FROM golang:1.24.3-alpine AS build
+FROM golang:1.26.6-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache ca-certificates
 COPY go.mod go.sum ./

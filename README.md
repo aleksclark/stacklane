@@ -231,7 +231,7 @@ Additional notes:
 
 ## Install (local)
 
-From a clone of this repo (requires Go 1.24+):
+From a clone of this repo (requires Go 1.26.6+):
 
 ```bash
 # binary + systemd user unit + host split-DNS (Linux)
