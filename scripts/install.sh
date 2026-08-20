@@ -3,11 +3,14 @@
 #
 # Always builds/installs the binary. Optionally installs:
 #   - systemd --user unit (Linux) to run `stacklane serve`
-#   - host split-DNS so *.stacklane.test resolves via 127.0.0.1:5353
-#     (systemd-resolved drop-in on Linux; /etc/resolver on macOS)
+#   - host split-DNS so *.test resolves via 127.0.0.1:15353
+#     (Linux: dummy iface stacklane0 + systemd-networkd/resolved;
+#      macOS: /etc/resolver/<base>)
 #
-# Does NOT claim port 53, edit global resolv.conf, or install launchd (macOS
-# service). VIP lo0 aliases on macOS remain a manual operator step.
+# Does NOT claim port 53, put Domains=~test on Global next to public
+# uplink DNS (that loses to NXDOMAIN), edit global resolv.conf, or
+# install launchd (macOS service). VIP lo0 aliases on macOS remain a
+# manual operator step.
 #
 # Usage:
 #   ./scripts/install.sh                 # binary + systemd + dns (where supported)
@@ -19,8 +22,8 @@ set -euo pipefail
 PREFIX="${PREFIX:-${HOME}/.local}"
 DESTDIR="${DESTDIR:-}"
 STATE_DIR="${STACKLANE_STATE_DIR:-${HOME}/.stacklane}"
-DNS_LISTEN="${STACKLANE_DNS_LISTEN:-127.0.0.1:5353}"
-DNS_BASE_DOMAIN="${STACKLANE_DNS_BASE_DOMAIN:-stacklane.test}"
+DNS_LISTEN="${STACKLANE_DNS_LISTEN:-127.0.0.1:15353}"
+DNS_BASE_DOMAIN="${STACKLANE_DNS_BASE_DOMAIN:-test}"
 UNIT_NAME="stacklane.service"
 
 UNINSTALL=0
@@ -37,15 +40,15 @@ usage() {
 Usage: install.sh [options]
 
   Install stacklane from this repository: binary, optional systemd user unit,
-  and optional host split-DNS for *.stacklane.test.
+  and optional host split-DNS for *.test.
 
 Options:
   --prefix DIR       Install prefix (default: ~/.local, or $PREFIX)
   --destdir DIR      Staging root prepended to install paths (no enable/start)
   --state-dir DIR    Daemon state dir (default: ~/.stacklane)
   --dns-listen ADDR  DNS listen addr written into unit/DNS config
-                     (default: 127.0.0.1:5353)
-  --dns-domain NAME  Base domain (default: stacklane.test)
+                     (default: 127.0.0.1:15353)
+  --dns-domain NAME  Base domain (default: test)
   --binary-only      Install binary only (no systemd, no host DNS)
   --no-systemd       Skip systemd user unit
   --no-dns           Skip host DNS/resolver configuration
@@ -59,6 +62,7 @@ Options:
 Environment:
   PREFIX, DESTDIR, GO
   STACKLANE_STATE_DIR, STACKLANE_DNS_LISTEN, STACKLANE_DNS_BASE_DOMAIN
+  STACKLANE_DNS_IFACE, STACKLANE_DNS_IFACE_ADDR, STACKLANE_DNS_ROUTE_DOMAINS
 
 Examples:
   ./scripts/install.sh
@@ -207,9 +211,20 @@ UNIT_PATH="${DESTDIR}${USER_UNIT_DIR}/${UNIT_NAME}"
 
 # Host DNS artifact paths (DESTDIR-prefixed when staging)
 RESOLVED_DROPIN_REL="/etc/systemd/resolved.conf.d/50-stacklane.conf"
+NETWORKD_NETDEV_REL="/etc/systemd/network/10-stacklane0.netdev"
+NETWORKD_NETWORK_REL="/etc/systemd/network/10-stacklane0.network"
 MAC_RESOLVER_REL="/etc/resolver/${DNS_BASE_DOMAIN}"
 RESOLVED_DROPIN="${DESTDIR}${RESOLVED_DROPIN_REL}"
+NETWORKD_NETDEV="${DESTDIR}${NETWORKD_NETDEV_REL}"
+NETWORKD_NETWORK="${DESTDIR}${NETWORKD_NETWORK_REL}"
 MAC_RESOLVER="${DESTDIR}${MAC_RESOLVER_REL}"
+# Dummy link used only as a systemd-resolved DNS attachment point.
+DNS_IFACE_NAME="${STACKLANE_DNS_IFACE:-stacklane0}"
+DNS_IFACE_ADDR="${STACKLANE_DNS_IFACE_ADDR:-10.255.255.1/32}"
+# Extra routing domains (space-separated, with or without leading ~).
+# Base domain is always included. Subdomains of the base (e.g. mathscan.test
+# under base test) are already covered by ~${DNS_BASE_DOMAIN}.
+DNS_ROUTE_DOMAINS_EXTRA="${STACKLANE_DNS_ROUTE_DOMAINS:-}"
 
 case "$OS" in
   Linux) ;;
@@ -266,12 +281,29 @@ uninstall_systemd() {
 uninstall_dns() {
   case "$OS" in
     Linux)
+      local removed=0
       if [[ -e "$RESOLVED_DROPIN" || -L "$RESOLVED_DROPIN" ]]; then
         remove_file "$RESOLVED_DROPIN"
-        if [[ -z "$DESTDIR" ]] && command -v systemctl >/dev/null 2>&1; then
-          run_root systemctl restart systemd-resolved 2>/dev/null || \
-            warn "could not restart systemd-resolved; reboot or restart it manually"
+        removed=1
+      fi
+      if [[ -e "$NETWORKD_NETDEV" || -L "$NETWORKD_NETDEV" ]]; then
+        remove_file "$NETWORKD_NETDEV"
+        removed=1
+      fi
+      if [[ -e "$NETWORKD_NETWORK" || -L "$NETWORKD_NETWORK" ]]; then
+        remove_file "$NETWORKD_NETWORK"
+        removed=1
+      fi
+      if [[ "$removed" -eq 1 && -z "$DESTDIR" ]] && command -v systemctl >/dev/null 2>&1; then
+        run_root systemctl reload systemd-networkd 2>/dev/null || \
+          run_root systemctl restart systemd-networkd 2>/dev/null || \
+          warn "could not reload systemd-networkd; reboot or restart it manually"
+        # Best-effort: delete residual dummy if networkd left it
+        if command -v ip >/dev/null 2>&1; then
+          run_root ip link delete "$DNS_IFACE_NAME" 2>/dev/null || true
         fi
+        run_root systemctl restart systemd-resolved 2>/dev/null || \
+          warn "could not restart systemd-resolved; reboot or restart it manually"
       fi
       ;;
     Darwin)
@@ -404,28 +436,100 @@ EOF
 
 # --- host DNS ----------------------------------------------------------------
 
+# Build Domains= line for the dummy iface network unit.
+# Always routes ~${DNS_BASE_DOMAIN}; optional extras from STACKLANE_DNS_ROUTE_DOMAINS.
+dns_route_domains_line() {
+  local -a out=()
+  local d raw norm seen="|"
+  for raw in "$DNS_BASE_DOMAIN" $DNS_ROUTE_DOMAINS_EXTRA; do
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    [[ -z "$raw" ]] && continue
+    case "$raw" in
+      ~*) norm="$raw" ;;
+      *)  norm="~$raw" ;;
+    esac
+    case "$seen" in
+      *"|${norm}|"*) continue ;;
+    esac
+    seen="${seen}${norm}|"
+    out+=("$norm")
+  done
+  # shellcheck disable=SC2086,SC2128
+  printf '%s' "${out[*]}"
+}
+
 install_dns_linux_resolved() {
+  local domains
+  domains="$(dns_route_domains_line)"
+
+  # Global drop-in must NOT set DNS= / Domains= alongside public uplink
+  # (e.g. 8.8.8.8). resolved will ask Google for *.test → NXDOMAIN cache.
+  # Split-DNS lives on dummy iface ${DNS_IFACE_NAME} instead.
   write_file 644 "$RESOLVED_DROPIN" <<EOF
-# Managed by stacklane scripts/install.sh — split DNS for ${DNS_BASE_DOMAIN}
-# Routes only ~${DNS_BASE_DOMAIN} to the stacklane daemon (default ${DNS_LISTEN}).
-# Remove this file and restart systemd-resolved to undo.
+# Managed by stacklane scripts/install.sh
+# Split-DNS is attached to dummy interface ${DNS_IFACE_NAME} via
+# ${NETWORKD_NETDEV_REL} + ${NETWORKD_NETWORK_REL}.
+# Do NOT set Domains=~${DNS_BASE_DOMAIN} (or DNS=) here next to Global
+# uplink resolvers — that loses to public NXDOMAIN for .test.
 [Resolve]
-DNS=${DNS_HOST}:${DNS_PORT}
-Domains=~${DNS_BASE_DOMAIN}
+# intentionally empty
 EOF
-  log "installed systemd-resolved drop-in $RESOLVED_DROPIN"
+  log "installed systemd-resolved drop-in $RESOLVED_DROPIN (no Global Domains)"
+
+  write_file 644 "$NETWORKD_NETDEV" <<EOF
+# Managed by stacklane scripts/install.sh — dummy link for split-DNS scope
+[NetDev]
+Name=${DNS_IFACE_NAME}
+Kind=dummy
+EOF
+  log "installed networkd netdev $NETWORKD_NETDEV"
+
+  write_file 644 "$NETWORKD_NETWORK" <<EOF
+# Managed by stacklane scripts/install.sh — route ~${DNS_BASE_DOMAIN} (and extras)
+# only to the stacklane daemon. DNSDefaultRoute=no keeps public DNS on Global.
+[Match]
+Name=${DNS_IFACE_NAME}
+
+[Network]
+ConfigureWithoutCarrier=yes
+Address=${DNS_IFACE_ADDR}
+LLMNR=no
+MulticastDNS=no
+DNS=${DNS_HOST}:${DNS_PORT}
+Domains=${domains}
+DNSDefaultRoute=no
+EOF
+  log "installed networkd network $NETWORKD_NETWORK (Domains=${domains} → ${DNS_HOST}:${DNS_PORT})"
 
   if [[ -z "$DESTDIR" ]]; then
-    if command -v systemctl >/dev/null 2>&1; then
-      if run_root systemctl restart systemd-resolved 2>/dev/null; then
-        log "restarted systemd-resolved"
-      else
-        warn "could not restart systemd-resolved; run: sudo systemctl restart systemd-resolved"
-      fi
+    if ! command -v systemctl >/dev/null 2>&1; then
+      warn "systemctl unavailable; wrote DNS files but could not activate"
+      return 0
     fi
-    # Helpful verification hint
+    # networkd must manage the dummy for a persistent DNS scope
+    if ! systemctl is-enabled systemd-networkd >/dev/null 2>&1 && \
+       ! systemctl is-active systemd-networkd >/dev/null 2>&1; then
+      warn "systemd-networkd is not active/enabled; enabling for stacklane split-DNS"
+      run_root systemctl enable --now systemd-networkd 2>/dev/null || \
+        warn "could not enable systemd-networkd; host DNS may not activate until it is"
+    fi
+    if run_root systemctl reload systemd-networkd 2>/dev/null || \
+       run_root systemctl restart systemd-networkd 2>/dev/null; then
+      log "reloaded systemd-networkd"
+    else
+      warn "could not reload systemd-networkd; run: sudo systemctl restart systemd-networkd"
+    fi
+    # Give networkd a moment to create the link before resolved picks it up
+    sleep 0.5 2>/dev/null || true
+    if run_root systemctl restart systemd-resolved 2>/dev/null; then
+      log "restarted systemd-resolved"
+    else
+      warn "could not restart systemd-resolved; run: sudo systemctl restart systemd-resolved"
+    fi
     if command -v resolvectl >/dev/null 2>&1; then
-      log "verify with: resolvectl query app.example.${DNS_BASE_DOMAIN}   # after stacklane serve is up"
+      log "verify with: resolvectl status ${DNS_IFACE_NAME}"
+      log "             resolvectl query app.example.${DNS_BASE_DOMAIN}   # after stacklane serve is up"
     fi
   fi
 }
@@ -455,16 +559,17 @@ install_dns() {
 
   case "$OS" in
     Linux)
-      # Prefer systemd-resolved when present or when staging under DESTDIR
+      # Prefer systemd-resolved + networkd when present or when staging under DESTDIR
       if [[ -n "$DESTDIR" ]] || \
          [[ -d /etc/systemd/resolved.conf.d ]] || \
+         [[ -d /etc/systemd/network ]] || \
          [[ -L /etc/resolv.conf && "$(readlink -f /etc/resolv.conf 2>/dev/null || true)" == *systemd* ]] || \
          command -v resolvectl >/dev/null 2>&1; then
         install_dns_linux_resolved
       else
-        warn "systemd-resolved not detected; host DNS not configured"
+        warn "systemd-resolved/networkd not detected; host DNS not configured"
         warn "point tools at ${DNS_LISTEN} or use: stacklane resolve <name>"
-        warn "manual resolved drop-in path: ${RESOLVED_DROPIN_REL}"
+        warn "manual paths: ${NETWORKD_NETDEV_REL}, ${NETWORKD_NETWORK_REL}, ${RESOLVED_DROPIN_REL}"
       fi
       ;;
     Darwin)
@@ -490,7 +595,11 @@ fi
 log "  status:       stacklane status -o json"
 log "  resolve:      stacklane resolve app.example.${DNS_BASE_DOMAIN}"
 if [[ "$WITH_DNS" -eq 1 ]]; then
-  log "  host DNS:     *.${DNS_BASE_DOMAIN} -> ${DNS_LISTEN} (daemon must be running)"
+  if [[ "$OS" == "Linux" ]]; then
+    log "  host DNS:     *.${DNS_BASE_DOMAIN} -> ${DNS_LISTEN} via ${DNS_IFACE_NAME} (daemon must be running)"
+  else
+    log "  host DNS:     *.${DNS_BASE_DOMAIN} -> ${DNS_LISTEN} (daemon must be running)"
+  fi
 else
   log "  host DNS:     not configured; dig @${DNS_HOST} -p ${DNS_PORT} <name>"
 fi

@@ -102,7 +102,7 @@ func NewEngine(deps Deps) *Engine {
 		deps.ReconcileTimeout = 30 * time.Second
 	}
 	if deps.BaseDomain == "" {
-		deps.BaseDomain = "stacklane.test"
+		deps.BaseDomain = "test"
 	}
 	e := &Engine{
 		deps:   deps,
